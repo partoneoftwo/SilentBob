@@ -60,7 +60,7 @@ INTRODUCTION FAQ:
 Q: What does SilentBob do?
 A: SilentBob is a frontend for iptables, which lets you configure
 your Linux machine as a firewall or network router.
-It uses an menu driven (ncurses) configure system which is very
+It uses a menu driven (ncurses) configure system which is very
 easy to use.
 
 Q: On what does SilentBob run on?
