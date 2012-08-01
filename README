@@ -26,8 +26,11 @@
 #############################################################################
 
 
+LICENSE: GPLv2 - Please see LICENSE file
+COMPATIBLE WITH: DEBIAN, UBUNTU, SLACKWARE
+
 ########################
-#   ACKNOWLEDGEMENT    #
+#   ACKNOWLEDGEMENTS   #
 ########################
 
 This script was originally designed, coded and written by
@@ -52,6 +55,34 @@ who did the impressive work on this script. Thanks Jerome!
 Website: https://github.com/thomasfrivold/silentbob
 Contact: Thomas Frivold <thomas.frivold@gmail.com>
 
+INTRODUCTION FAQ:
+
+Q: What does SilentBob do?
+A: SilentBob is a frontend for iptables, which lets you configure
+your Linux machine as a firewall or network router.
+It uses an menu driven (ncurses) configure system which is very
+easy to use.
+
+Q: On what does SilentBob run on?
+A: Unlike Jay's Firewall v1.0.5 which was released in 2005, SilentBob
+runs on contemporary Linux distributions such as Ubuntu and new versions
+of Debian, Fedora, ArchLinux and Slackware.
+
+Q: Is SilentBob different from Jay's Firewall?
+A: No, the functionality hasn't changed, and probably will not change.
+The difference is that it actually works on newer systems, that's all.
+
+Q: Why revive Jay's Firewall (ie. why am I doing this?):
+A: Because Jay's Firewall was my preferred firewall script (iptables
+wrapper) back in 2002 when I got aDSL installed in my house.
+I kept using it, and found it to be really nice when I needed a
+firewall, fast.
+
+Q: But you didn't write it, why rename it?
+A: I am forking it, so that I can keep my own Github repositories,
+and do as much modifications to the sources as I want.
+I still give all acknowledgements to Jerome Nokin for writing the
+original script. I am but a fan.
 
 -----
 From the old readme, which will be rewritten in the future, if needed.
