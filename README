@@ -33,6 +33,11 @@ COMPATIBLE WITH: DEBIAN, UBUNTU, SLACKWARE, ARCHLINUX and others
 
 TESTED ON: DEBIAN 6 [SQUEEZE], UBUNTU 12.04 [PRECISE PANGOLIN]
 
+HOMEPAGE: https://github.com/thomasfrivold/SilentBob
+
+OLD HOMEPAGE: http://firewall-jay.sourceforge.net/
+OLD FRESHMEAT PAGE: http://freecode.com/projects/firewall-jay
+
 ########################
 #   ACKNOWLEDGEMENTS   #
 ########################
@@ -48,7 +53,7 @@ altered version as a fork on Github under the name Silentbob.
 The goal is to keep the software alive and kicking, and to ultimately
 have a nice firewall script to run on gateways and servers.
 Although Jerome recommends users to look elsewhere, for instance
-at M0n0wall or others, I still prefer Jay's Firewall for
+at M0n0wall or Shorewall, I still prefer Jay's Firewall for
 it's useability.
 
 My minor edits and small hacks should not be praised, it was Jerome Nokin
