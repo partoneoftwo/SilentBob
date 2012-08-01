@@ -1,7 +1,8 @@
 PICKED UP BY THOMAS FRIVOLD
 
-v1.0.6 01.08.2012
-  - Fixed quirks that made the script not work on modern Debian and Ubuntu
+v1.0.6 01.08.2012 by THOMAS FRIVOLD
+#################
+- Fixed quirks that made the script not work on modern Debian and Ubuntu
     distributions.
     - These quirks were: VERBOSE mode not working properly, so the
     script now acts in verbose mode all the time. I had to rename all ECHO
