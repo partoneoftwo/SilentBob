@@ -1,8 +1,8 @@
 #############################################################################
 #                                                                           #
-#   Thomas's Iptables Firewall - a fork of 			            #
+#   SilenBob Firewall - a fork of    			                    #
 #									    #
-#   Jay's Iptables Firewall               :    README  file                 #
+#   Jay's Iptables Firewall                                                 #
 #                                                                           #
 #   Original script written by Jerome Jenkin                                #
 #   Abandoned by Jerome in 2007 according to his website     	            #
@@ -49,10 +49,12 @@ who did the impressive work on this script. Thanks Jerome!
 
 - Thomas Frivold 01.08.2012
 
+Website: https://github.com/thomasfrivold/silentbob
+Contact: Thomas Frivold <thomas.frivold@gmail.com>
 
 
 -----
-From the old readme
+From the old readme, which will be rewritten in the future, if needed.
 
 See INSTALL          for installation's details
 See README.Spywares  for enable and initialize the spyware feature
