@@ -26,7 +26,7 @@
 #############################################################################
 
 
-LICENSE: GPLv2 - Please see LICENSE file
+LICENSE: GPLv2 - Please see http://www.gnu.org/licenses/gpl-2.0.html
 
 COMPATIBLE WITH: DEBIAN, UBUNTU, SLACKWARE, ARCHLINUX and others
 (Possibly also non-x86 platforms)

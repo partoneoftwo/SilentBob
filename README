@@ -103,6 +103,16 @@ Jay & Silent Bob.
 If you haven't seen any movies with Jay and Silent Bob in them,
 you've missed out!
 
+Q: Can you suggest some alternatives to this script?
+A: Sure! 
+   There's Shorewall http://www.shorewall.net/,
+   M0n0wall http://m0n0.ch/wall/, 
+   and then my friends on Reddit has suggested: 
+   Ferm http://ferm.foo-projects.org/ 
+   and 
+   UFW (Uncomplicated FireWall)
+   https://wiki.archlinux.org/index.php/Uncomplicated_Firewall
+
 -----
 Information from the old readme, which will be rewritten in the future, if needed.
 -----
