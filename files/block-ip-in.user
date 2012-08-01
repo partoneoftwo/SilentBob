@@ -1,0 +1,25 @@
+#######
+# block-ip-in.user
+#
+# Deny incoming traffic from ...
+#
+# Write the hosts/ip list 
+#   
+#        Syntax:  [!]<ip or subnet>:<description>
+#        -------
+#
+#        - subnet can be "host.domain.xxx", "1.1.1.1", "1.1.1.0/24" or "1.1.1.0/255.255.255.0"
+#          or a range like "1.2.3.50-1.2.3.100" but you need to install the iprange module.
+#        - description : must be less than 24 characters (logs from iptables are limited to 29)
+#
+#        Example:
+#        --------
+#           !10.0.0.1:good-guy
+#           !10.0.0.5:good-guy
+#           10.0.0.0/8:bad-guys
+#
+#        A line begining with a '#" are regarded as comment.
+#
+# See README
+#
+#######

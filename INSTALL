@@ -1,0 +1,355 @@
+#############################################################################
+#                                                                           #
+#  Jay's Iptables Firewall               :    INSTALL file                  #
+#                                                                           #
+#  Copyright 2002 Jerome Nokin                                              #
+#                                                                           #
+#   This program is free software; you can redistribute it and/or modify    #
+#   it under the terms of the GNU General Public License as published by    #
+#   the Free Software Foundation; either version 2 of the License, or       #
+#   (at your option) any later version.                                     #
+#                                                                           #
+#   This program is distributed in the hope that it will be useful,         #
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of          #
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the           #
+#   GNU General Public License for more details.                            #
+#                                                                           #
+#   You should have received a copy of the GNU General Public License       #
+#   along with this program; if not, write to the Free Software             #
+#   Foundation, Inc., 59 Temple Place, Suite 330, Boston,                   #
+#   MA  02111-1307  USA                                                     #
+#                                                                           #
+#############################################################################
+
+
+web : http://firewall-jay.sourceforge.net
+
+
+        Documentation (lite version, see on website for more informations)
+
+      1. Introducion
+      2. Required 
+      2.1 Kernel configuration
+      2.2 Dialog 
+      3. Install 
+      3.1. Redhat 
+      3.2. Debian 
+      3.3. All distributions 
+      4. Upgrade 
+      5. Configure
+      5.1. The interactive mode 
+      5.2. The manual mode 
+      5.3. Minimal configuration 
+      5.4. TCP/UDP Ports for Internet 
+      5.5. TCP/UDP Ports for LAN
+      5.6. Firewall inside a LAN
+      6. Start the firewall
+      7. Automatic startup 
+
+
+1. Introduction
+
+      Here you will find all necessary informations about Jay's Iptables
+      Firewall, how is it working, how to install it and to play with it.
+      See on website for more information about how it's working 
+      (Section Policy).
+
+
+2. Required
+
+      _A Linux box with_
+          o A kernel >= 2.4 (http://www.kernel.org)
+          o The latest *iptables* <http://www.iptables.org> (version <=
+            1.2.6a)
+          o Perl
+          o Dialog >= *0.9a-20020309a* (if you want an interactive
+            configuration, see screenshots)
+
+2.1 Kernel configuration
+
+      Your kernel needs the netfilter modules. Here is an example of a
+      2.4.20 kernel configuration.
+
+   Code maturity level options  --->
+     [*] Prompt for development and/or incomplete code/drivers
+
+   Networking options --->
+     [*] Network packets filtering (replace ipchains)
+
+   Networking options ---> 
+     IP: Netfilter Configuration --->
+          <M> Connection tracking (required for masq/NAT)
+          <M>   FTP protocol support                    
+          <M>   IRC protocol support                   
+          <M> IP tables support (required for filtering/masq/NAT)
+          <M>   limit match support                             
+          <M>   MAC address match support                      
+          <M>   Packet type match support                    
+          <M>   netfilter MARK match support                
+          <M>   Multiple port match support                
+          <M>   TOS match support                         
+          <M>   LENGTH match support                     
+          <M>   TTL match support                      
+          <M>   tcpmss match support                  
+          <M>   Connection state match support      
+          <M>   Connection tracking match support  
+          <M>   Unclean match support (EXPERIMENTAL)      
+          <M>   Packet filtering                        
+          <M>     REJECT target support                
+          <M>   Full NAT                              
+          <M>     MASQUERADE target support          
+          <M>     REDIRECT target support           
+          <M>   Packet mangling                    
+          <M>     TOS target support              
+          <M>     MARK target support          
+          <M>   LOG target support           
+          <M>   TCPMSS target support   
+
+2.2 Dialog
+
+      Dialog <http://hightek.org/dialog/> is a utility to create nice
+      user interfaces to shell scripts, or other scripting languages,
+      such as perl. It is non-graphical (it uses curses) so it can be
+      run in the console or an xterm.
+
+      Dialog version *0.9a-20020309a* is needed for 'firewall-config.pl'
+      if you want to use the interactive configuration mode. See section
+      5. Configuration 
+
+3. Install
+
+      Get the latest version in the download section and
+      choose the file of your preferred distribution.
+
+3.1. Debian
+
+      # dpkg -i firewall-jay-x.y.z.deb
+
+      or
+
+      Add deb http://firewall-jay.sourceforge.net/debian/ ./
+      in /etc/apt/sources.list and run
+
+      # apt-get update
+      # apt-get install firewall-jay
+
+3.2. Redhat
+
+      # rpm -Uvh firewall-jay-x.y.z.rpm
+
+3.3. All distributions
+
+      # tar xzf firewall-jay-x.y.z.tar.gz
+
+      # cd firewall-jay-x.y.z
+
+      # make install
+
+      This will copy the files as showed in files section (see website).
+
+4. Upgrade
+
+      First you need to install the firewall as it is explained above.
+      This will overwrite your current release.
+
+      The next step is to have an up to date configuration's file.
+      */etc/firewall-jay/firewall.config*
+
+      _Upgrade config from version < 0.9.1a_
+
+            Sorry but you can't automaticaly update your current
+            configuration's file to the latest version. You need to
+            create a new one.
+            This will create a new configuration file with the
+            interactive Perl script (dialog mode)
+
+            # firewall-config.pl --new
+
+            If you prefere a manual configuration, this will generate a
+            empty configuration file that you must edit and configure.
+
+            # firewall-config.pl --generate
+
+      _Upgrade config from version >= 0.9.1a_
+
+            Simply run
+
+            # firewall-config.pl --update
+
+      This will add new variable names and options in your file.
+
+      Restart the firewall with
+
+      # /etc/init.d/fw-jay restart
+
+5. Configure
+
+      There is two mode of configuration. The _Interactive_ mode and the
+      _Manual_ mode.
+      Both create a comented configuration's file. You may be able to
+      start with the interactive mode and continue with the manual mode,
+      or the reverse. You can at every moment pass from the one to the
+      other.
+
+5.1. The interactive mode
+
+      Run
+
+      # firewall-config.pl --new
+
+      This will launch an interactive configuration's menu and help you
+      to create a new configuration's file.
+      The [-n|--new] parameter is only for create a non-existing
+      configuration's file, for reconfigure the firewall later, only run
+
+      # firewall-config.pl
+
+      You can create a testing configuration's file in an other location
+      while adding
+      [-c|--config <filename>] parameter.
+
+      For more details see
+
+      # firewall-config.pl --help
+
+5.2. The manual mode
+
+      Run
+
+      # firewall-config.pl --generate
+
+      This will create a empty configuration's file which you must edit
+      and configure.
+      Here again, you can create a testing configuration's file in an
+      other location while adding [-c|--config <filename>] parameter.
+
+5.3. The minimal configuration
+
+      The firewall need some required information before it can start.
+      Please verify these few points.
+
+    * _The external interface(s) or Internet interface(s)_
+      This is the bad side of the firewall, it can be a LAN if you are
+      using this firewall inside a LAN (in this case you need to disable
+      the spoofing control).
+
+    * _Your DNS ips_
+      Probably given by your ISP, see /etc/resolv.conf (or the config of
+      your DNS server if you are using one on the linux box)
+
+    * _If you are running a DHCP server for your LAN_
+      Don't forget to enable the "DHCP Server" option in "Configuration
+      => LAN" for the interactive mode, or set the variable
+      "USE_DHCP_SERVER" to "1" in the configuration's file.
+      This mean that your linux box can accept the dhcp requests from
+      your LAN. This is a special access because the host may have a ip
+      like 0.0.0.0 (only the ips of your subnets are allowed to connect
+      from your LANs).
+
+5.4 TCP/UDP Ports for Internet
+
+      You probably want to open some TCP/UDP ports for Internet.
+      This firewall support multiple internet and/or LAN interfaces, so
+      you need to specify on which interface you want to open the
+      tcp/udp ports.
+
+      Here is a example if you want to configure the firewall by hand.
+
+      Syntax:
+
+        TCP_EXT_IN="<iface1>;<port1>,<port2>,<port3>,... <iface2>;<port1>,<port2>"
+
+      Example:
+
+        TCP_EXT_IN="ppp0;22,80 ppp1;25,110"
+
+5.5 TCP/UDP Ports for LAN
+
+      Idem for the LAN. This firewall support multiple internet
+      and/or LAN interfaces, so you need to specify on which interface
+      you want to open the tcp/udp ports.
+
+      Leave TCP_INT_IN="*" for allow all TCP connections from
+      your LAN (idem for UDP), if not :
+      Give the list of TCP/UDP ports that you want to allow on your 
+      box (and for which interface). '*' mean all ports
+
+      Syntax:
+
+        TCP_INT_IN="<iface1>;<port1>,<port2>,<port3>,... <iface2>;<port1>,<port2>"
+
+      Example:
+
+        TCP_INT_IN="eth1;22,80 eth2;*"
+
+5.4. Firewall inside a LAN
+
+      You can install this firewall inside a LAN, example on a
+      single-host or a sub-LAN (here the external interface is a LAN
+      interface), but *you need to disable the spoofing control*.
+
+      The spoofing control deny the internet hosts claiming to come from
+      a LAN (with a private source ip like 10.0.0.0/8, 192.168.0.0/24,
+      ...), but inside a LAN ... you need to use these ips.
+
+      To disable the spoofing control with the firewall-config.pl
+      utility, go on *Configuration => Internet* or open the
+      configuration's file and set the variable "SPOOFING_CONTROL" to
+      *1* in the configuration's file.
+
+
+6. Start the firewall
+
+      _Warning:_ The firewall needs the ips of your network's cards
+      and/or your internet connection.
+      The firewall needs to be started after the network and other
+      script's connections, if it can't found at least one connected
+      external interface (like internet), it will not want to start.
+
+      Play with
+
+        # /etc/init.d/fw-jay {start|stop}
+        # /etc/init.d/fw-jay {up|down}
+        # /etc/init.d/fw-jay {restart}
+        # /etc/init.d/fw-jay {check}
+        # /etc/init.d/fw-jay {reload-block-ip|reload-block-mac}
+
+      The up|down options are for compatibility and have the same
+      effects as start|stop.
+      The check option is for testing the config's file.
+      The reload-block-{ip|mac} options are for reloading the block
+      ip/mac denying files when the firewall is up.
+
+7. Automatic startup
+
+      The firewall needs the ips of your network's cards and/or your
+      internet connection.
+      The firewall needs to be started *after* the network and other
+      script's connections, if not, it will not want to start.
+
+      Simply add a link in your runlevel, get your default runlevel from
+      your /etc/inittab file.
+
+      _Example with rc3.d_
+
+        # ls -l /etc/rc3.d/
+        ...
+        lrwxrwxrwx 1 root root  S40network  -> ../init.d/network
+        lrwxrwxrwx 1 root root  S45adsl     -> ../init.d/adsl
+        ...
+
+            The /network/ start in position *40* and the /adsl/ in
+            position *45*
+            Start the firewall in position *46*
+
+        # cd /etc/rc3.d/
+
+        # ln -s ../init.d/fw-jay S46fw-jay
+
+        # ls -l /etc/rc3.d/
+        ...
+        lrwxrwxrwx 1 root root  S40network -> ../init.d/network
+        lrwxrwxrwx 1 root root  S45adsl	   -> ../init.d/adsl
+        lrwxrwxrwx 1 root root  S46fw-jay  -> ../init.d/fw-jay
+        ...
+

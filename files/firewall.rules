@@ -1,0 +1,2756 @@
+#!/bin/bash
+#############################################################################
+#                                                                           #
+#  firewall.rules    v1.0.5           by Jay                                #
+#                                                                           #
+#  Copyright 2002 Jerome Nokin                                              #
+#                                                                           #
+#   This program is free software; you can redistribute it and/or modify    #
+#   it under the terms of the GNU General Public License as published by    #
+#   the Free Software Foundation; either version 2 of the License, or       #
+#   (at your option) any later version.                                     #
+#                                                                           #
+#   This program is distributed in the hope that it will be useful,         #
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of          #
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the           #
+#   GNU General Public License for more details.                            #
+#                                                                           #
+#   You should have received a copy of the GNU General Public License       #
+#   along with this program; if not, write to the Free Software             #
+#   Foundation, Inc., 59 Temple Place, Suite 330, Boston,                   #
+#   MA  02111-1307  USA                                                     #
+#                                                                           #
+#############################################################################
+
+
+# This method works in 2012
+# Are we root?
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root" 1>&2
+   exit 1
+fi
+
+
+
+
+# include config file
+
+[ ! -e $1/firewall.config ] && {
+	echo "Error: firewall.rules: Cannot find config file at ${1}/firewall.config, please run 'firewall-config.pl -n' to create a new one."
+	exit 1;
+}
+
+. $1/firewall.config
+
+####################################################
+#  BUILD  VARIABLE                                 #
+####################################################
+
+
+test_if_down () {
+
+
+    # test for alias support
+    #if [ ! "`$IFCONFIG $1 2>/dev/null| $GREP UP`" ] || [ ! "`$IFCONFIG $1 2>/dev/null| $GREP inet`" ]; then
+
+    if [ ! "`$IFCONFIG $1 2>/dev/null| $GREP 'inet '`" ]; then
+	echo
+	echo "Warning: interface '$1' is down and will be ignored"
+     	echo
+	return 1
+    else
+       	return 0
+    fi
+
+}
+
+test_if_alias () {
+    if [ "`echo $1 | $GREP :`" ];
+    then
+	echo
+	echo "Warning: interface '$1' is a alias and will be ignored"
+	echo
+	return 1
+    else
+	return 0
+    fi
+}
+
+
+# Build LAN interfaces 
+######################
+
+for iface in ${INT_IFACE[*]}; do
+
+	test_if_alias $iface
+	[ $? != 0 ] && continue
+
+	test_if_down $iface
+	[ $? != 0 ] && continue
+
+	IFACE_DATA="`$IFCONFIG $iface | $GREP 'inet '`"
+
+	IP_TMP="`echo $IFACE_DATA | $SED -e \"s/^[^0-9.]*\([0-9.]*\)[^0-9.]*[0-9.]*[^0-9.]*[0-9.]*.*$/\1/\"`"
+	SUBNET_TMP="`echo $IFACE_DATA | $SED -e \"s/^[^0-9.]*\([0-9.]*\)[^0-9.]*[0-9.]*[^0-9.]*\([0-9.]*\).*$/\1\/\2/\"`"
+
+
+	echo "found internal $iface on ip:'$IP_TMP', sub:'$SUBNET_TMP'" 
+   
+	# save iface in tmp list (goal: keep only 'up' iface)
+	TMP_IFACE=(${TMP_IFACE[*]} $iface)
+
+
+	IP_ADDR_LAN=(${IP_ADDR_LAN[*]} $IP_TMP)
+	INT_LAN=(${INT_LAN[*]} $SUBNET_TMP)
+done
+
+# update list (without down iface)
+INT_IFACE=(${TMP_IFACE[*]})
+
+
+
+
+# Build Extern interfaces
+#########################
+
+
+# detect ips
+TMP_IFACE=""
+for iface in $EXT_IFACE; do
+
+	test_if_alias $iface
+	[ $? != 0 ] && continue
+
+	test_if_down $iface
+	[ $? != 0 ] && continue
+
+
+	IP_TMP="`$IFCONFIG $iface | $GREP 'inet ' | $SED -e \"s/^[^0-9.]*\([0-9.]*\).*$/\1/\"`"
+
+	echo "found external $iface on ip:'$IP_TMP'"
+
+        # save iface in tmp list (goal: remove alias from iface)
+        TMP_IFACE="$TMP_IFACE $iface"
+
+	IP_ADDR_EXT="$IP_ADDR_EXT $IP_TMP"
+done
+EXT_IFACE="$TMP_IFACE"
+
+
+# there is at least one interface ?
+if [ "$EXT_IFACE" == "" ]
+then
+        echo
+        echo "Error: No connected external interfaces found"
+        exit 1
+fi
+
+
+
+	################################################################
+	###    TESTING IPTABLES                                      ###
+	################################################################
+	
+   
+	error_msg1="Error: Iptables doesn't support "
+	error_msg2="       Please reconfigure your kernel with all needed modules"
+
+	#############
+	##  filter  #
+	#############
+
+	$IPTABLES -F JAY_TEST_IPTABLES >/dev/null 2>&1
+	$IPTABLES -X JAY_TEST_IPTABLES >/dev/null 2>&1
+	$IPTABLES -N JAY_TEST_IPTABLES >/dev/null 2>&1
+
+
+
+	# iprange (if you want to use PeerProtect)
+	IPRANGE_OK="0"
+        $IPTABLES -A JAY_TEST_IPTABLES -m iprange --dst-range 1.1.1.1-1.1.1.4 >/dev/null 2>&1
+        [ "$?" == 0 ] && {
+
+		# don't stop anything, it's only for know if iprange can be used in the blocking feature
+		# see below
+
+		IPRANGE_OK="1"
+        }
+
+	# ULOG if used
+	if [ "$LOG_ULOG_NLGROUP" != "" ] || [ "$DENY_ULOG_NLGROUP" != "" ];then
+
+	        $IPTABLES -A JAY_TEST_IPTABLES -j ULOG --ulog-nlgroup 1 --ulog-prefix "test: " >/dev/null 2>&1
+        	[ "$?" != 0 ] && {
+	            echo
+        	    echo "$error_msg1 'ULOG' and you are asking for it."
+	            echo "$error_msg2"
+        	    echo
+	            exit 1
+        	}
+	fi
+
+
+	# ipt_TCPMSS
+	$IPTABLES -A JAY_TEST_IPTABLES -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu >/dev/null 2>&1 
+	[ "$?" != 0 ] && {
+	    echo
+	    echo "$error_msg1 'TCPMSS'" 
+	    echo "$error_msg2"
+	    echo
+	    exit 1
+	}
+
+
+	# ipt_REJECT
+	$IPTABLES -A JAY_TEST_IPTABLES -p tcp --dport 3 -j REJECT  >/dev/null 2>&1
+	[ "$?" != 0 ] && {
+	    echo
+	    echo "$error_msg1 'REJECT'" 
+	    echo "$error_msg2"
+	    echo
+	    exit 1
+	}
+		
+
+	# ipt_LOG
+	$IPTABLES -A JAY_TEST_IPTABLES -p tcp -j LOG --log-level info --log-prefix "test"
+	[ "$?" != 0 ] && {
+	    echo
+	    echo "$error_msg1 'LOG' functions" 
+	    echo "$error_msg2"
+	    echo
+	    exit 1     
+	}
+
+	# ipt_length 
+	$IPTABLES -A JAY_TEST_IPTABLES -m length -p tcp --length 500:1500 -j ACCEPT
+	[ "$?" != 0 ] && {
+	    echo
+	    echo "$error_msg1 'LENGTH' match" 
+	    echo "$error_msg2"
+	    echo
+	    exit 1
+	}
+
+	# ipt_limit
+	$IPTABLES -A JAY_TEST_IPTABLES -p tcp -m limit --limit 3/s -j ACCEPT
+	[ "$?" != 0 ] && {
+	    echo
+	    echo "$error_msg1 'LIMIT' functions" 
+	    echo "$error_msg2"
+	    echo
+	    exit 1
+	}
+	# ipt_state 
+	$IPTABLES -A JAY_TEST_IPTABLES -m state --state ESTABLISHED -j ACCEPT
+	[ "$?" != 0 ] && {
+	    echo
+	    echo "$error_msg1 'STATE' match" 
+	    echo "$error_msg2"
+	    echo
+	    exit 1
+	}
+
+	# delete tests 
+	$IPTABLES -F JAY_TEST_IPTABLES >/dev/null 2>&1
+	$IPTABLES -X JAY_TEST_IPTABLES >/dev/null 2>&1
+
+
+	#########
+	## NAT  #
+	#########
+	$IPTABLES -t nat -F JAY_TEST_IPTABLES >/dev/null 2>&1
+	$IPTABLES -t nat -X JAY_TEST_IPTABLES >/dev/null 2>&1
+	$IPTABLES -t nat -N JAY_TEST_IPTABLES >/dev/null 2>&1
+	[ "$?" != 0 ] && {
+	    echo
+	    echo "$error_msg1 'NAT' rules" 
+	    echo "$error_msg2"
+	    echo
+	    exit 1
+	}
+
+	# ipt_MASQUERADE
+	if [ "$NAT" == "1" ];then
+		$IPTABLES -t nat -A JAY_TEST_IPTABLES -j MASQUERADE >/dev/null 2>&1
+		[ "$?" != 0 ] && {
+		    echo
+		    echo "$error_msg1 'MASQUERADING' options" 
+		    echo "$error_msg2"
+		    echo
+		    exit 1
+		  }
+	fi
+
+	# ipt_REDIRECT
+	$IPTABLES -t nat -A JAY_TEST_IPTABLES -p tcp --dport 3 -j REDIRECT --to-port 4  >/dev/null 2>&1
+	[ "$?" != 0 ] && {
+	    echo
+	    echo "$error_msg1 'REDIRECT' options" 
+	    echo "$error_msg2"
+	    echo
+	    exit 1
+	}
+
+	# delete tests
+	$IPTABLES -t nat -F JAY_TEST_IPTABLES >/dev/null 2>&1
+	$IPTABLES -t nat -X JAY_TEST_IPTABLES >/dev/null 2>&1
+
+
+
+	###########
+	## MANGLE #
+	###########
+
+	# mangle
+	$IPTABLES -t mangle -F JAY_TEST_IPTABLES >/dev/null 2>&1
+	$IPTABLES -t mangle -X JAY_TEST_IPTABLES >/dev/null 2>&1
+	$IPTABLES -t mangle -N JAY_TEST_IPTABLES >/dev/null 2>&1
+	[ "$?" != 0 ] && {
+		echo
+		echo "$error_msg1 'MANGLE' tables"
+		echo "$error_msg2"
+		echo
+		exit 1
+	}
+
+
+	# ipt_MARK
+	if [ "$MARK" == "1" ];then
+		$IPTABLES -t mangle -A JAY_TEST_IPTABLES -j MARK --set-mark 1
+		[ "$?" != 0 ] && {
+			echo
+			echo "$error_msg1 'MARK' options" 
+			echo "$error_msg2"
+			echo
+			exit 1   
+		}
+	fi
+
+
+	# ipt_TOS
+	if [ "$TOS" == "1" ];then
+		$IPTABLES -t mangle -A JAY_TEST_IPTABLES -t mangle -p tcp --dport 2 -j TOS --set-tos Maximize-Throughput
+		[ "$?" != 0 ] && {
+			echo
+			echo "$error_msg1 'TOS' options" 
+			echo "$error_msg2"
+			echo
+			exit 1
+		}
+	fi
+
+	# delete mangle tests
+	$IPTABLES -t mangle -F JAY_TEST_IPTABLES >/dev/null 2>&1
+	$IPTABLES -t mangle -X JAY_TEST_IPTABLES >/dev/null 2>&1
+
+
+	echo "Check of iptables : OK"
+
+
+################################################################
+###    STARTING FIREWALL & PLAYING WITH KERNEL'S FEATURES    ###
+################################################################
+
+
+# Log martians ?
+##################
+# Log packets with impossible addresses to kernel log
+
+if [ "$LOG_MARTIANS" == "1" ];
+then
+    echo "Enable log_martians"
+    if [ -r /proc/sys/net/ipv4/conf/all/log_martians ];
+    then	
+	echo "1" > /proc/sys/net/ipv4/conf/all/log_martians 
+    fi   
+else
+	echo "0" > /proc/sys/net/ipv4/conf/all/log_martians
+fi         
+
+
+# Deny ping broadcasted (smurf attack)
+#######################################
+if [ -e /proc/sys/net/ipv4/icmp_echo_ignore_broadcasts ]
+then
+    echo "Ignore icmp echo broadcasted"
+    echo "1" > /proc/sys/net/ipv4/icmp_echo_ignore_broadcasts
+fi
+
+# Deny Ping ?
+###############
+#if [ "$PING_FOR_ALL" == "0" ];
+#then
+#    if [ "$ALLOWED_PING" == "" ]
+#    then
+#	echo "Deny Ping from everyone"
+#	echo "1" > /proc/sys/net/ipv4/icmp_echo_ignore_all
+#    else
+#        echo "0" > /proc/sys/net/ipv4/icmp_echo_ignore_all
+#    fi
+#else
+#    echo "Allow Ping from everyone"
+#    echo "0" > /proc/sys/net/ipv4/icmp_echo_ignore_all
+#fi
+
+
+# Don't accept redirect
+##############################
+if [ -e /proc/sys/net/ipv4/conf/all/accept_redirects ]
+then
+    echo "Don't accept icmp redirect"
+    echo "0" > /proc/sys/net/ipv4/conf/all/accept_redirects
+fi
+
+# Disable ICMP send_redirect
+##############################
+if [ -e /proc/sys/net/ipv4/conf/all/send_redirects ];
+then
+    echo "Don't send icmp redirect"
+	for interface in /proc/sys/net/ipv4/conf/*/send_redirects; do
+ 		echo "0" > $interface
+	done
+fi
+
+# Ignore bogus error
+##############################
+# Some routers violate RFC 1122 by sending bogus responses to broadcast
+# frames.  Such violations are normally logged via a kernel warning.
+
+if [ -e /proc/sys/net/ipv4/icmp_ignore_bogus_error_responses ]
+then
+    echo "Ignore bogus error responses"
+    echo "1" > /proc/sys/net/ipv4/icmp_ignore_bogus_error_responses
+fi
+
+
+# Masquerade ?
+##############################
+if [ "$NAT" == "1" ]
+then
+    echo "Enable Ip Forwarding"
+    echo "1" > /proc/sys/net/ipv4/ip_forward 
+else
+    echo "Disable Ip Forwarding"
+    echo "0" > /proc/sys/net/ipv4/ip_forward
+fi
+
+
+
+# Enable rp_filter
+###############################
+if [ -r /proc/sys/net/ipv4/conf/all/rp_filter ]; 
+then
+	if [ "$MARK" == "0" ]
+	then
+		echo "Enable rp_filter"
+        	for f in /proc/sys/net/ipv4/conf/*/rp_filter; do
+                	echo 1 > $f
+        	done
+	else
+		echo "Disable rp_filter (for iproute)"
+		for f in /proc/sys/net/ipv4/conf/*/rp_filter; do
+			echo 0 > $f
+		done
+	fi
+fi
+
+
+
+# Enable syncookies protection
+###############################
+if [ -r /proc/sys/net/ipv4/tcp_syncookies ]
+then
+	echo "Enable syncookies protection"
+	echo "1" > /proc/sys/net/ipv4/tcp_syncookies
+fi
+
+
+
+# Disabling source routing
+###############################
+if [ -r /proc/sys/net/ipv4/conf/all/accept_source_route ] 
+then 
+    echo "Disable source routing"
+    echo "0" > /proc/sys/net/ipv4/conf/all/accept_source_route
+else
+	echo
+	echo "ERROR : cannot find '/proc/sys/net/ipv4/conf/all/accept_source_route'"
+	echo "A host on your subnet (IPS side) may access to your internal network"
+	echo "Firewall not started"
+	exit ;
+fi
+
+
+
+
+# Automatic IP defragmenting
+############################
+if [ -e /proc/sys/net/ipv4/ip_always_defrag ]
+then
+    echo "Enable automatic ip defragmenting"
+    echo "1" > /proc/sys/net/ipv4/ip_always_defrag
+fi
+
+
+# Dynamic IP ?
+#####################
+[ "$DYN_IP" == "1" ] && [ -e /proc/sys/net/ipv4/ip_dynaddr ] && {
+	echo "Enable Ip dynamic address"
+	echo "1" > /proc/sys/net/ipv4/ip_dynaddr
+}
+
+# Maximum Segment Size ?
+#
+
+
+
+
+#################################################
+# IPTABLES RULES                                #
+#################################################
+echo "-------- iptables rules --------"
+
+
+# flush Old rules
+##################
+
+
+# Filter
+$IPTABLES -t filter -F
+$IPTABLES -t filter -X
+
+
+# Nat
+[ "`lsmod |grep iptable_nat`" != "" ] && {
+        $IPTABLES -t nat -F
+        $IPTABLES -t nat -X
+}
+
+# Mangle
+[ "`lsmod |grep iptable_mangle`" != "" ] && {
+        $IPTABLES -t mangle -F
+        $IPTABLES -t mangle -X
+}
+
+
+
+
+
+# Create new chains
+###################
+
+## For Extern Interface
+$IPTABLES -t filter -N JAY_INETIN
+$IPTABLES -t filter -N JAY_INETIN_TCP
+$IPTABLES -t filter -N JAY_INETIN_UDP
+$IPTABLES -t filter -N JAY_INETOUT
+
+
+## For LAN Interfaces
+$IPTABLES -t filter -N JAY_LANIN
+$IPTABLES -t filter -N JAY_LANOUT
+
+## For the Forwarding
+$IPTABLES -t filter -N JAY_FWD_LAN_LAN
+$IPTABLES -t filter -N JAY_FWD_LAN_INET
+$IPTABLES -t filter -N JAY_FWD_INET_LAN
+
+
+##  TUNNELING Interfaces
+if [ "$TUN_IFACE" != "" ]
+then
+    $IPTABLES -t filter -N JAY_TUNIN
+    $IPTABLES -t filter -N JAY_TUNOUT
+fi
+
+##  Check  TCP 
+[ "$TCP_CONTROL" == "1" ] && $IPTABLES -t filter -N JAY_CHECK_TCP
+
+## Check ICMP
+$IPTABLES -t filter -N JAY_CHECK_ICMP
+
+## Check Synflood
+$IPTABLES -t filter -N JAY_SYNFLOOD
+
+## Spoofing
+[ "$SPOOFING_CONTROL" == "1" ] && $IPTABLES -t filter -N JAY_SPOOFING
+
+##  Log Chains
+[ "$LOG_DROPPED" == "1" ] && $IPTABLES -t filter -N JAY_LDROP
+
+
+
+# Set default policies
+######################
+
+echo "Set Default policies at DROP for INPUT & FORWARD chains"
+$IPTABLES -t filter -P INPUT       DROP
+$IPTABLES -t filter -P OUTPUT      ACCEPT
+$IPTABLES -t filter -P FORWARD     DROP
+
+if [ "$NAT" == "1" ]
+then
+	$IPTABLES -t nat    -P POSTROUTING ACCEPT
+	$IPTABLES -t nat    -P PREROUTING  ACCEPT
+	$IPTABLES -t nat    -P OUTPUT      ACCEPT
+fi
+
+
+# ZorIPtraffic ?
+######################
+
+
+#if [ "$ZORBIPTRAFFIC" == "1" ]
+#then
+
+#	${IPTABLES} -N ZORBCOUNT  # flush already done
+#	for sub in $ZORBIPTRAFFIC_NET; do
+#	    ${IPTABLES} -A FORWARD -s $sub -j ZORBCOUNT
+#	    ${IPTABLES} -A FORWARD -d $sub -j ZORBCOUNT
+#	done
+#fi
+
+
+
+
+# Distribute Traffic
+####################
+
+
+## For the tunnels
+if [ "$TUN_IFACE" != "" ]
+then
+	for int in $TUN_IFACE; do
+		$IPTABLES -t filter -A INPUT  -i $int -j JAY_TUNIN
+		$IPTABLES -t filter -A OUTPUT -o $int -j JAY_TUNOUT
+	done
+
+fi
+
+
+
+
+############################################
+# LOOPBACK SECTION
+############################################
+
+echo "Allow unlimited traffic on the loopback device"
+$IPTABLES -A INPUT -i lo -j ACCEPT
+
+
+
+######################################################
+#           FORWARD SECTION     
+######################################################
+
+echo 
+echo "Forward Section"
+echo "---------------"
+
+#-----------------
+# LAN <-> LAN
+#-----------------
+
+# Allow local traffic bettween LANs
+
+
+# more than one iface ?
+#if [ `echo "${INT_IFACE[*]}" |wc -w |sed -e "s/ //g"` -gt 1 ];then
+
+    i=0
+    for iface1 in ${INT_IFACE[*]} ; do
+
+
+	# iface is up ?
+	test_if_down $iface1
+	[ $? != 0 ] && continue
+  
+
+
+	# for all iface but iface1
+	j=0
+	for iface2 in ${INT_IFACE[*]} ; do
+	
+	    # iface2 != iface1 ?
+	    if [ "$iface1" != "$iface2" ];then
+
+		# iface is up ?
+		test_if_down $iface2
+		[ $? != 0 ] && continue
+	    
+		$IPTABLES -t filter -A FORWARD -i $iface1 -o $iface2  -j JAY_FWD_LAN_LAN
+		
+      	    fi
+	    j=$j+1
+	done
+	i=$i+1
+    done
+
+
+    # Accept all between LANs
+    echo "   LANs -> LANs : Accept All"
+    $IPTABLES -A JAY_FWD_LAN_LAN -j ACCEPT
+#fi
+
+
+#------------------
+# INET -> LAN
+#------------------
+
+# Allow traffic bettween between Inet & LANs 
+#echo "Allow traffic between Inet & LANs"
+for iface1 in  $EXT_IFACE; do
+
+    # iface is up ?
+    test_if_down $iface1
+    [ $? != 0 ] && continue
+
+    j=0
+    for iface2 in ${INT_IFACE[*]} ; do
+
+	# iface is up ?
+	test_if_down $iface2
+	[ $? != 0 ] && continue
+
+	$IPTABLES -t filter -A FORWARD -i $iface1 -o $iface2 -j JAY_FWD_INET_LAN
+	   
+	j=$j+1
+    done
+done
+
+# Set rules for Inet to LAN
+
+if [ "$TCP_CONTROL" == "1" ];then
+	echo "   Inet -> LANs : TCP Check"
+	$IPTABLES -A JAY_FWD_INET_LAN -p tcp -j JAY_CHECK_TCP
+fi
+
+echo "   Inet -> LANs : ICMP Check"
+$IPTABLES -A JAY_FWD_INET_LAN -p icmp -j JAY_CHECK_ICMP
+
+if [ "$SPOOFING_CONTROL" == "1" ];then
+	echo "   Inet -> LANs : Spoofing Check"
+	$IPTABLES -A JAY_FWD_INET_LAN -j JAY_SPOOFING
+fi
+
+echo "   Inet -> LANs :  Accept ESTABLISHED & RELATED connections"
+$IPTABLES -A JAY_FWD_INET_LAN -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+
+
+#------------------
+# LAN -> INET
+#------------------
+
+# Allow traffic bettween between LANs & Inet 
+#echo "Allow traffic between LANs & Inet"
+i=0
+for iface1 in ${INT_IFACE[*]}; do
+
+    test_if_down $iface1
+    [ $? != 0 ] && continue
+
+    for iface2 in $EXT_IFACE; do
+
+	test_if_down $iface2
+	[ $? != 0 ] && continue
+
+	$IPTABLES -t filter -A FORWARD -i $iface1 -o $iface2 -j JAY_FWD_LAN_INET
+    done
+    i=$i+1
+done
+
+### Set rules for Lan to Inet
+
+# Smurf
+echo "   LANs -> Inet : Smurf attack"
+$IPTABLES -I JAY_FWD_LAN_INET -p icmp --icmp-type echo-reply -j DROP
+
+if [ "$LOG_echo_REPLY_TO_OUTSIDE" == "1" ]
+then
+	if [ "$LOG_ULOG_NLGROUP" != "" ]
+	then
+		# use ULOG
+		$IPTABLES -I JAY_FWD_LAN_INET -p icmp --icmp-type echo-reply \
+                -m limit --limit $LOG_LIMIT --limit-burst 1 \
+		-j ULOG --ulog-nlgroup $LOG_ULOG_NLGROUP --ulog-prefix "Dopped PING reply to outside"
+	else
+		# use LOG
+    		$IPTABLES -I JAY_FWD_LAN_INET -p icmp --icmp-type echo-reply \
+		-m limit --limit $LOG_LIMIT --limit-burst 1 \
+		-j LOG --log-level $LOGLEVEL --log-prefix "Dopped PING reply to outside"
+
+	fi
+fi
+
+
+
+# Deny outging invalid ICMP (bug in version < ipables-1.2.6a)
+echo "   LANs -> Inet : Invalid ICMP"
+$IPTABLES -A JAY_FWD_LAN_INET -p icmp -m state --state INVALID -j DROP
+
+# TCP 
+if [ "$TCP_CONTROL" == "1" ]
+then
+	echo "   LANs -> Inet : TCP Check"
+	$IPTABLES -A JAY_FWD_LAN_INET -p tcp -j JAY_CHECK_TCP
+fi
+
+# TCPMSS
+echo "   LANs -> Inet : TCP to MSS"
+$IPTABLES -A JAY_FWD_LAN_INET -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+
+# Drop outgoing fragmented packets from LAN
+echo "   LANs -> Inet : Deny fragmented packets"
+$IPTABLES -A JAY_FWD_LAN_INET -f -j DROP
+
+# Accept
+echo "   LANs -> Inet : Accept NEW,ESTABLISHED and RELATED connections"
+$IPTABLES -A JAY_FWD_LAN_INET -m state  --state NEW,RELATED,ESTABLISHED -j ACCEPT
+
+
+# Masquerading ?
+if [ "$NAT" == "1" ]
+then
+    echo "   LANs -> Inet : Setting up MASQUERADE"
+    
+    for iface in $EXT_IFACE; do
+
+	test_if_down $iface
+	[ $? != 0 ] && continue
+
+	for subnet in ${INT_LAN[*]}; do
+	    $IPTABLES -t nat -A POSTROUTING -o $iface -s $subnet -j MASQUERADE
+	done
+    done
+fi
+
+
+
+
+
+#################################################################
+#        FORWARD TCP/UDP SECTION
+#################################################################
+
+if [ "$TCP_FORWARD" != "" ]
+then
+    # ex: $TCP_FORWARD="eth0,eth1:1>2222:2224>192.168.0.4"
+
+
+    for forward in $TCP_FORWARD; do
+
+	fwd_from_iface=""
+
+	# Cut a rule in 3 parts (iface + ports + ipdest)
+	echo "$forward" | {
+	    IFS='>' read ifaces ports dest
+
+
+	    # There is ifaces ?
+	    [ "$dest" == "" ] && echo "   Forward TCP : no input interface(s) found in '$forward'" && break 
+
+	    # Take all the iface
+	    IFS=','
+	    for if in $ifaces; do
+
+		# iface up ?
+		test_if_down $if
+		[ $? != 0 ] && continue
+
+		# add
+		[ "$fwd_from_iface" == "" ] && fwd_from_iface="$if" || \
+		    fwd_from_iface="$fwd_from_iface $if"
+	    done
+
+
+
+	    # There is a different destination port ?
+	    echo "$dest" |{
+		IFS=':' read host dport
+		IFS=' '
+		
+		# Verbose
+		echo -n "   Forward TCP : from: '$fwd_from_iface', port: '$ports', to: "
+		[ "$dport" != "" ] && \
+			echo "'$host:$dport'" || \
+			echo "'$host'"
+
+
+# bug
+echo -n ""
+
+		# Add rule
+		for iface in $fwd_from_iface; do
+	
+		    # get ip of iface
+		    ip_iface="`$IFCONFIG $iface | $GREP 'inet ' | $SED -e \"s/^[^0-9.]*\([0-9.]*\).*$/\1/\"`"
+#echo $ip_iface
+	
+
+                    # we have a explicit destination port ?
+                    if [ "$dport" != "" ];then
+                        ${IPTABLES} -t nat -A PREROUTING -i $iface -d $ip_iface -p tcp -m tcp \
+                        --dport $ports -j DNAT --to-destination $host:$dport
+
+                        # Allow in FORWARD chain
+                        $IPTABLES -A FORWARD -i $iface -p tcp --dport $dport -m state --state NEW -j ACCEPT
+                    else
+                        ${IPTABLES} -t nat -A PREROUTING -i $iface -d $ip_iface -p tcp -m tcp \
+                        --dport $ports -j DNAT --to $host
+
+                        # Allow in FORWARD chain
+                        $IPTABLES -A FORWARD -i $iface -p tcp --dport $ports -m state --state NEW -j ACCEPT
+                    fi
+ 
+		done
+		
+	    } 
+	}
+    done
+fi 
+
+
+
+if [ "$UDP_FORWARD" != "" ]
+then
+    # ex: $UDP_FORWARD="eth0,eth1>2222:2224>192.168.0.4"
+
+
+    for forward in $UDP_FORWARD; do
+
+	fwd_from_iface=""
+
+	# Cut a rule in 3 parts (iface + ports + ipdest)
+	echo "$forward" | {
+	    IFS='>' read ifaces ports dest
+
+
+	    # There is ifaces ?
+	    [ "$dest" == "" ] && echo "   Forward UDP : no input interface(s) found in '$forward'" && break 
+
+	    # Take all the iface
+	    IFS=','
+	    for if in $ifaces; do
+
+		# iface up ?
+		test_if_down $if
+		[ $? != 0 ] && continue
+
+		# add
+		[ "$fwd_from_iface" == "" ] && fwd_from_iface="$if" || \
+		    fwd_from_iface="$fwd_from_iface $if"
+	    done
+
+
+
+
+	    # There is a different destination port ?
+	    echo "$dest" |{
+		IFS=':' read host dport
+		IFS=' '
+		
+		# Verbose
+		echo -n "   Forward UDP : from: '$fwd_from_iface', port: '$ports', to: "
+		[ "$dport" != "" ] && \
+			echo "'$host:$dport'" || \
+			echo "'$host'"
+
+
+# bug
+echo -n ""
+		# Add rule
+		for iface in $fwd_from_iface; do
+
+		    ip_iface="`$IFCONFIG $iface | $GREP 'inet ' | $SED -e \"s/^[^0-9.]*\([0-9.]*\).*$/\1/\"`"
+
+		
+                    # we have a explicit destination port ?
+                    if [ "$dport" != "" ];then
+                        ${IPTABLES} -t nat -A PREROUTING -i $iface -d $ip_iface -p udp -m udp \
+                        --dport $ports -j DNAT --to $host:$dport
+
+                        # Allow in FORWARD chain
+                        $IPTABLES -A FORWARD -i $iface -p udp --dport $dport -m state --state NEW -j ACCEPT
+                    else
+                        ${IPTABLES} -t nat -A PREROUTING -i $iface -d $ip_iface -p udp -m udp \
+                        --dport $ports -j DNAT --to $host
+
+                        # Allow in FORWARD chain
+                        $IPTABLES -A FORWARD -i $iface -p udp --dport $ports -m state --state NEW -j ACCEPT
+                    fi
+ 
+		done
+		
+	    } 
+	}
+    done
+fi
+# end of udp forward
+
+
+
+
+#############################################
+# LAN SECTION (INPUT & OUTPUT  connections)
+#############################################
+
+echo
+echo "LAN Section"
+echo "-----------"
+
+
+# Select traffic
+#echo "Setting up LAN Control"
+for int in ${INT_IFACE[*]}; do
+
+
+    test_if_down $int
+    [ $? != 0 ] && continue
+
+    $IPTABLES -t filter -A INPUT  -i $int -j JAY_LANIN
+    $IPTABLES -t filter -A OUTPUT -o $int -j JAY_LANOUT
+done
+
+
+# Allow unlimited traffic between the box and the LAN interface(s) (at this time) 
+echo "   LAN : Allow traffic between the Box & the LANs"
+
+if [ "$TCP_INT_IN" != "" ] ; then
+	$IPTABLES -N JAY_LANIN_TCP
+fi
+
+if [ "$UDP_INT_IN" != "" ] ; then
+        $IPTABLES -N JAY_LANIN_UDP
+fi
+
+
+
+i=0
+for interface in ${INT_IFACE[*]}; do
+
+	test_if_down $interface
+    	[ $? != 0 ] && continue
+
+	if [ "$TCP_INT_IN" != "" ] ; then
+	    	$IPTABLES -A JAY_LANIN  -i $interface -p tcp -s ${INT_LAN[$i]} -j JAY_LANIN_TCP
+	fi
+
+	if [ "$UDP_INT_IN" != "" ] ; then
+	        $IPTABLES -A JAY_LANIN  -i $interface -p udp -s ${INT_LAN[$i]} -j JAY_LANIN_UDP
+	fi
+
+
+	$IPTABLES -A JAY_LANOUT -o $interface -d ${INT_LAN[$i]} -j ACCEPT
+    	i=$i+1
+done
+
+ echo -n "   LAN : Allow incoming ICMP"
+$IPTABLES -A JAY_LANIN  -p icmp  -j ACCEPT
+
+
+
+# setting up restricted access for TCP
+if [ "$TCP_INT_IN" != "*" ] && [ "$TCP_INT_IN" != "" ] ;then
+
+	echo -n "   LAN : Allow incoming TCP connection on ports "
+
+	for item in $TCP_INT_IN ; do
+        echo $item |{
+                IFS=';'
+                read iface ports
+
+
+                if [ "`echo ${INT_IFACE[*]} |$GREP -e $iface `" == "" ];then
+
+                        echo
+                        echo "WARNING: You're asking for open tcp port(s) on a internal interface that "
+                        echo "         has not been found in the interface configuration, $iface will be ignored"
+                        echo
+                         continue
+                fi
+
+
+                echo -n "$iface:"
+
+                # open
+		if [ "$ports" == "*" ];then
+
+			# open all ports
+			echo -n "all"
+			$IPTABLES -A JAY_LANIN_TCP -i $iface -m state --state ESTABLISHED,NEW -j ACCEPT
+		else
+                	IFS=','
+	                for port in $ports;do
+        	                echo -n "$port "
+	                         $IPTABLES -A JAY_LANIN_TCP -i $iface -p tcp --dport $port -m state --state ESTABLISHED,NEW -j ACCEPT
+        	        done
+		fi
+
+        }
+        echo -n "  "
+	done
+	echo
+
+        # Allowing established outbound connections back in
+        echo "   LAN : Allowing established outbound connections back in for tcp"
+        $IPTABLES -t filter -A JAY_LANIN_TCP -m state --state ESTABLISHED -j ACCEPT
+        $IPTABLES -t filter -A JAY_LANIN_TCP -p tcp --dport $UPRIV_PORTS -m state --state ESTABLISHED,RELATED -j ACCEPT
+else
+
+
+	if [ "$TCP_INT_IN" != "" ];then
+		# open all ports
+        	echo "   LAN : Allow incoming TCP connection on ALL ports"
+	        $IPTABLES -A JAY_LANIN_TCP -m state --state ESTABLISHED,NEW -j ACCEPT
+
+		# Allowing established outbound connections back in
+		echo "   LAN : Allowing established outbound connections back in for tcp"
+		$IPTABLES -t filter -A JAY_LANIN_TCP -p tcp --dport $UPRIV_PORTS -m state --state ESTABLISHED,RELATED -j ACCEPT
+	
+	else
+		echo "   LAN : Deny tcp connections"
+		echo -n ""
+	fi
+fi
+
+
+# setting up restricted access for UDP
+if [ "$UDP_INT_IN" != "*" ] && [ "$UDP_INT_IN" != "" ];then
+        echo -n "   LAN : Allow incoming UDP connection on ports "
+
+        for item in $UDP_INT_IN ; do
+        echo $item |{
+                IFS=';'
+                read iface ports
+
+
+                if [ "`echo ${INT_IFACE[*]} |$GREP -e $iface `" == "" ];then
+
+                        echo
+                        echo "WARNING: You're asking for open udp port(s) on a internal interface that "
+                        echo "         has not been found in the interface configuration, $iface will be ignored"
+                        echo
+                         continue
+                fi
+
+
+                echo -n "$iface:"
+
+                # open
+                if [ "$ports" == "*" ];then
+
+                        # open all ports
+                        echo -n "all"
+                        $IPTABLES -A JAY_LANIN_UDP -i $iface -p udp -m state --state ESTABLISHED,NEW -j ACCEPT
+                else 
+	                IFS=','
+        	        for port in $ports;do
+                	        echo -n "$port "
+                         	$IPTABLES -A JAY_LANIN_UDP -i $iface -p udp --dport $port -m state --state ESTABLISHED,NEW -j ACCEPT
+	                done
+		fi
+        }
+        echo -n "  "
+        done
+        echo
+
+        # Allowing established outbound connections back in
+        echo "   LAN : Allowing established outbound connections back in for udp"
+        $IPTABLES -t filter -A JAY_LANIN_UDP -m state --state ESTABLISHED -j ACCEPT
+        $IPTABLES -t filter -A JAY_LANIN_UDP -p udp --dport $UPRIV_PORTS -m state --state ESTABLISHED,RELATED -j ACCEPT
+else
+	
+	if [ "$UDP_INT_IN" != "" ];then
+	        # open all ports
+        	echo "   LAN : Allow incoming UDP connection on ALL ports"
+	        $IPTABLES -A JAY_LANIN_UDP -m state --state ESTABLISHED,NEW -j ACCEPT
+
+        	# Allowing established outbound connections back in
+	        echo "   LAN : Allowing established outbound connections back in for udp"
+        	$IPTABLES -t filter -A JAY_LANIN_UDP -p udp --dport $UPRIV_PORTS -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+	else
+		echo "   LAN : Deny udp connections"	
+		echo -n ""
+	fi
+fi
+
+
+
+
+
+
+# Accept DHCP requests from LAN with source 0.0.0.0/0
+if [ "$USE_DHCP_SERVER" == "1" ]
+then
+	echo "   LAN : Accept DHCP requests from source 0.0.0.0/0"
+	$IPTABLES -A JAY_LANIN  -p udp  --sport 68 --dport 67 -j ACCEPT
+	$IPTABLES -A JAY_LANOUT -p udp  --sport 67 --dport 68 -j ACCEPT
+fi
+
+
+
+
+
+# Set Transparent HTTP proxy ?
+if [ "$PROXY_HTTP" != "" ]
+then
+	echo "   LAN : Transparent HTTP proxy on port $PROXY_HTTP"
+	for iface in ${INT_IFACE[*]}; do
+
+	    test_if_down $iface
+	    [ $? != 0 ] && continue
+
+	    $IPTABLES  -t nat -A PREROUTING -i $iface -p tcp --dport 80 -j REDIRECT --to-port $PROXY_HTTP
+	done
+fi
+
+
+# Set Transparent FTP proxy ?
+if [ "$PROXY_FTP" != "" ]
+then
+        echo "   LAN : Transparent FTP proxy on port $PROXY_FTP"
+        for iface in ${INT_IFACE[*]}; do
+
+	    test_if_down $iface
+	    [ $? != 0 ] && continue
+
+            $IPTABLES  -t nat -A PREROUTING -i $iface -p tcp --dport 21 -j REDIRECT --to-port $PROXY_FTP
+        done
+fi
+
+
+
+
+
+
+
+
+############################################
+# INET SECTION (INPUT & OUTPUT connections)
+#############################################
+
+echo
+echo "Internet Section"
+echo "----------------"
+
+
+
+#echo "Setting up Inet Control"
+
+# Select traffic
+for iface in $EXT_IFACE; do
+
+
+    test_if_down $iface
+    [ $? != 0 ] && continue
+
+    $IPTABLES -t filter -A INPUT  -i $iface -j JAY_INETIN
+    $IPTABLES -t filter -A OUTPUT -o $iface -j JAY_INETOUT
+done
+
+# Sub-select tcp and udp traffic
+$IPTABLES -t filter -A JAY_INETIN  -p tcp -j JAY_INETIN_TCP
+$IPTABLES -t filter -A JAY_INETIN  -p udp -j JAY_INETIN_UDP
+
+
+
+# Synflood
+echo "   Inet : Synflood Control"
+$IPTABLES -t filter -A JAY_INETIN_TCP -p tcp --syn -j JAY_SYNFLOOD
+
+
+# Spoofing
+if [ "$SPOOFING_CONTROL" == "1" ]
+then
+    echo "   Inet : Spoofing Control"
+    $IPTABLES -t filter -I JAY_INETIN -j JAY_SPOOFING
+fi
+
+
+# ICMP
+echo "   Inet : ICMP Control"
+$IPTABLES -t filter -A JAY_INETIN -p icmp -j JAY_CHECK_ICMP
+
+
+# TCP
+if [ "$TCP_CONTROL" == "1" ]
+then
+    echo "   Inet : TCP Control"
+    $IPTABLES -t filter -A JAY_INETIN_TCP  -j JAY_CHECK_TCP
+fi
+
+
+
+# Allow DHCP_SERVER
+if [ "$DHCP_SERVER" != "" ]
+then
+    echo "   Inet : Allow DHCP server to speak whith us"
+    $IPTABLES -A JAY_INETIN_UDP -p udp -s $DHCP_SERVER --sport 67 --dport 68 -j ACCEPT
+fi
+
+
+
+# Allowing DNS to connect from sport 53
+echo "   Inet : Allow DNS to speak whith us"
+for server in $DNS; do
+    $IPTABLES -A JAY_INETIN_UDP -p udp -s $server --sport 53 -m state --state ESTABLISHED -j ACCEPT
+done
+
+
+
+# ROOT DNS (idem)
+if [ "$ROOT_DNS" != "" ]
+then
+    echo "   Inet : Allow ROOT DNS to speak whith us"
+    for server in $ROOT_DNS; do
+        $IPTABLES -A JAY_INETIN_UDP -p udp -s $server --sport 53 -m state --state ESTABLISHED -j ACCEPT
+    done
+fi
+
+
+
+
+# Allow incoming TCP connections
+echo -n "   Inet : Allow incoming TCP connection on ports "
+
+for item in $TCP_EXT_IN ; do
+	echo $item |{
+		IFS=';'
+		read iface ports
+
+
+		if [ "`echo $EXT_IFACE |$GREP -e $iface `" == "" ];then
+		
+			echo
+			echo "WARNING: You're asking for open tcp port(s) on a external interface that "
+			echo "         has not been found in the interface configuration, $iface will be ignored"
+			echo
+			 continue
+		fi		
+
+
+		echo -n "$iface:"
+
+		# open
+		IFS=','
+		for port in $ports;do
+			echo -n "$port "
+			 $IPTABLES -A JAY_INETIN_TCP -i $iface -p tcp --dport $port -m state --state ESTABLISHED,NEW -j ACCEPT
+		done
+		
+	}
+	echo -n "  "
+done
+echo
+
+
+
+# Allow incoming UDP connections
+echo -n "   Inet : Allow incoming UDP connection on ports "
+for item in $UDP_EXT_IN ; do
+        echo $item |{
+                IFS=';'
+                read iface ports
+
+
+                if [ "`echo $EXT_IFACE |$GREP -e $iface `" == "" ];then
+
+                        echo
+                        echo "WARNING: You're asking for open udp port(s) on a external interface that "
+                        echo "         was not been found in the interface configuration, $iface will be ignored"
+                        echo
+                        continue
+                fi
+
+
+                echo -n "$iface:"
+
+                # open
+                IFS=','
+                for port in $ports;do
+                        echo -n "$port "
+			$IPTABLES -A JAY_INETIN_UDP -i $iface -p udp --dport $port -m state --state ESTABLISHED,NEW -j ACCEPT
+                done
+
+        }
+        echo -n "  "
+    
+done
+echo
+
+
+
+# Allowing established outbound connections back in 
+echo "   Inet : Allowing established outbound connections back in"
+
+
+$IPTABLES -t filter -A JAY_INETIN -m state --state ESTABLISHED -j ACCEPT
+$IPTABLES -t filter -A JAY_INETIN_TCP -p tcp --dport $UPRIV_PORTS -m state --state ESTABLISHED,RELATED -j ACCEPT
+$IPTABLES -t filter -A JAY_INETIN_UDP -p udp --dport $UPRIV_PORTS -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+
+# Drop (and log ?) if we cant find a valid inbound rule (Policie default = DROP, but ... )
+if [ "$LOG_DROPPED" == "1" ]
+then
+    echo "   Inet : Log the rest of dropped packets ... (gnacgnacgnac)"
+
+    $IPTABLES -t filter -A INPUT -j JAY_LDROP
+    $IPTABLES -t filter -A FORWARD -j JAY_LDROP
+
+    # Set up JAY_LDROP
+
+    if [ "$LOG_ULOG_NLGROUP" == "" ]
+    then
+	# use LOG
+	log_options=" -j LOG  --log-level $LOGLEVEL --log-prefix "
+    else
+   	log_options=" -j ULOG --ulog-nlgroup $LOG_ULOG_NLGROUP --ulog-prefix "
+    fi
+
+    $IPTABLES -t filter -A JAY_LDROP -p tcp  -m limit --limit $LOG_LIMIT $log_options "TCP Dropped "
+    $IPTABLES -t filter -A JAY_LDROP -p udp  -m limit --limit $LOG_LIMIT $log_options "UDP Dropped "
+    $IPTABLES -t filter -A JAY_LDROP -p icmp -m limit --limit $LOG_LIMIT $log_options "ICMP Dropped "
+    $IPTABLES -t filter -A JAY_LDROP -f -m limit --limit $LOG_LIMIT      $log_options "FRAGMENT Dropped "
+    $IPTABLES -t filter -A JAY_LDROP -j DROP
+else
+    $IPTABLES -t filter -A JAY_INETIN -j DROP
+fi
+
+
+
+##########################################################
+#       TUNNELING  (tun/tap)
+##########################################################
+if [ "$TUN_IFACE" != "" ]
+then
+
+    echo
+    echo "Tunneling Section"
+    echo "-----------------"
+
+    
+ 
+    # Distribute tun device in FORWARD
+    # Same rules for the box and the LAN
+
+    for int in $TUN_IFACE;do
+	$IPTABLES -t filter -I FORWARD -i $int -j JAY_TUNIN
+        $IPTABLES -t filter -I FORWARD -o $int -j JAY_TUNOUT
+    done
+
+
+    # Opening ICMP
+    echo "   Vtund : Allow all ICMP from tunnels"
+    $IPTABLES -t filter -A JAY_TUNIN  -p icmp -j ACCEPT
+    $IPTABLES -t filter -A JAY_TUNOUT  -p icmp -j ACCEPT
+
+    # Opening TCP ports
+    #####################
+    if [ "$TUN_TCP" == "*" ]
+    then
+
+	echo "   Vtund : Allow all TCP ports for tunnels"
+	
+	# Allow subnet in the box & the LAN
+        for sub in $TUN_SUBNET;do
+            $IPTABLES -t filter -A JAY_TUNIN  -p tcp -s $sub -j ACCEPT
+            $IPTABLES -t filter -A JAY_TUNOUT -p tcp -d $sub -j ACCEPT
+        done
+
+    else
+
+	
+	echo "   Vtund : Allow selected TCP ports for tunnels"
+
+	# For all subnet
+	for sub in $TUN_SUBNET;do
+
+	    # Allow TCP ports
+	    for port in $TUN_TCP;do
+		$IPTABLES -A JAY_TUNIN -s $sub -p tcp --dport $port -m state --state NEW,ESTABLISHED -j ACCEPT	   	
+	    done
+
+           
+	    # Allow LAN to going to tunnels
+	    $IPTABLES -A JAY_TUNOUT -d $sub -p tcp -j ACCEPT	
+	done
+
+	$IPTABLES -A JAY_TUNIN -p tcp -m state --state ESTABLISHED -j ACCEPT
+        $IPTABLES -A JAY_TUNIN -p tcp --dport $UPRIV_PORTS -m state --state RELATED -j ACCEPT
+
+	# drop anything else
+	$IPTABLES -A JAY_TUNIN -p tcp -j DROP
+    fi
+
+
+
+   # Opening UDP ports
+   ####################
+    if [ "$TUN_UDP" == "*" ]
+    then
+
+        echo "   Vtund : Allow all UDP ports for tunnels"
+
+        # Allow subnet in the box & the LAN
+        for sub in $TUN_SUBNET;do
+            $IPTABLES -t filter -A JAY_TUNIN  -p udp -s $sub -j ACCEPT
+            $IPTABLES -t filter -A JAY_TUNOUT -p udp -d $sub -j ACCEPT
+        done
+
+    else
+
+
+        echo "   Vtund : Allow selected UDP ports for tunnels"
+
+        # For all subnet
+        for sub in $TUN_SUBNET;do
+
+
+            # Allow UDP ports
+            for port in $TUN_UDP;do
+                $IPTABLES -A JAY_TUNIN -s $sub -p udp --dport $port -m state --state NEW,ESTABLISHED -j ACCEPT
+            done
+
+            # Allow LAN to going to tunnels
+            $IPTABLES -A JAY_TUNOUT -d $sub -p udp -j ACCEPT
+        done
+      
+        $IPTABLES -A JAY_TUNIN -p udp -m state --state ESTABLISHED -j ACCEPT
+        $IPTABLES -A JAY_TUNIN -p udp --dport $UPRIV_PORTS -m state --state RELATED -j ACCEPT
+
+        # drop anything else
+        $IPTABLES -A JAY_TUNIN -p udp -j DROP
+    fi
+fi
+
+
+
+
+
+################################################
+#        PPTP
+################################################
+if [ "$PPTP_LOCALHOST" == "1" ];
+then
+
+        # create CHAIN
+        $IPTABLES -N JAY_PPTPIN
+	$IPTABLES -I JAY_PPTPIN  -j ACCEPT        
+
+
+	$IPTABLES -N JAY_PPTP_FWD_VPN_LAN
+	$IPTABLES -I JAY_PPTP_FWD_VPN_LAN -j ACCEPT
+	
+	$IPTABLES -N JAY_PPTP_FWD_LAN_VPN
+	$IPTABLES -I JAY_PPTP_FWD_LAN_VPN -j ACCEPT
+
+
+        $IPTABLES -N JAY_PPTP_FWD_VPN_INET
+        $IPTABLES -I JAY_PPTP_FWD_VPN_INET -j ACCEPT
+
+        $IPTABLES -N JAY_PPTP_FWD_INET_VPN
+        $IPTABLES -I JAY_PPTP_FWD_INET_VPN -j ACCEPT
+
+
+        # allow the authentication (1723/tcp)
+	for iface in $PPTP_LOCALHOST_IFACES;do
+        
+		$IPTABLES -A JAY_INETIN_TCP -i $iface -p tcp --sport $UPRIV_PORTS --dport $PPTP_LOCALHOST_PORT \
+			-m state --state NEW,ESTABLISHED -j ACCEPT
+
+        	# allow data (ESP/AH protocol)
+        	$IPTABLES -I JAY_INETIN -i $iface -p 47 -j ACCEPT
+	done
+
+
+	
+
+	# Allow VPN to localhost
+	########################
+	# Allow VPN subnet
+        $IPTABLES -I INPUT  -i ppp+ -s $PPTP_LOCALHOST_SUBNET_VPN -d $PPTP_LOCALHOST_SUBNET_VPN -j JAY_PPTPIN
+        $IPTABLES -I INPUT  -i ppp+ -s $PPTP_LOCALHOST_SUBNET_VPN -d 255.255.255.255 -j JAY_PPTPIN
+
+
+        # open for other subnet from VPN
+        for sub in $PPTP_LOCALHOST_SUBNET_ALLOWED;do
+	        $IPTABLES -I INPUT  -i ppp+ -s $sub -d $PPTP_LOCALHOST_SUBNET_VPN -j JAY_PPTPIN
+                $IPTABLES -I INPUT  -i ppp+ -s $sub -d 255.255.255.255 -j JAY_PPTPIN
+	done
+
+
+        # Allow VPN to use your internet connection ?
+        #############################################
+        if [ "$PPTP_LOCALHOST_ACCESS_INET" == "1" ]
+        then
+
+
+                # For all internal ifaces/subnet
+                for interface in $EXT_IFACE; do
+
+                        test_if_down $interface
+                        [ $? != 0 ] && continue
+
+
+                        # Allow VPN subnet
+                        #$IPTABLES -I INPUT  -i ppp+ -o $interface -s $PPTP_LOCALHOST_SUBNET_VPN -j JAY_PPTPIN
+
+
+                        $IPTABLES -I FORWARD  -i ppp+ -o $interface -s $PPTP_LOCALHOST_SUBNET_VPN  -j JAY_PPTP_FWD_VPN_INET
+                        $IPTABLES -I FORWARD  -o ppp+ -i $interface -d $PPTP_LOCALHOST_SUBNET_VPN  -j JAY_PPTP_FWD_INET_VPN
+			$IPTABLES -t nat -A POSTROUTING -o $interface -s $PPTP_LOCALHOST_SUBNET_VPN -j MASQUERADE
+
+                        # open for other subnet from VPN
+                        for sub in $PPTP_LOCALHOST_SUBNET_ALLOWED;do
+
+
+                                #$IPTABLES -I INPUT  -i ppp+ -s $sub -d ${INT_LAN[$i]} -j JAY_PPTPIN
+                                #$IPTABLES -I INPUT  -i ppp+ -s $sub -d 255.255.255.255 -j JAY_PPTPIN
+
+                                # allow traffic in LAN
+                                $IPTABLES -I FORWARD  -i ppp+ -o $interface -s $sub -j JAY_PPTP_FWD_VPN_INET
+                                $IPTABLES -I FORWARD  -o ppp+ -i $interface -d $sub -j JAY_PPTP_FWD_INET_VPN
+				$IPTABLES -t nat -A POSTROUTING -o $interface -s $sub -j MASQUERADE
+                        done
+                        
+
+
+                done
+        fi
+
+
+
+
+
+
+
+
+        # Allow VPN subnet in LAN ?
+	##########################
+        if [ "$PPTP_LOCALHOST_ACCESS_LAN" == "1" ]
+        then
+
+
+		# For all internal ifaces/subnet
+		i=0
+		for interface in ${INT_IFACE[*]}; do
+
+	    		test_if_down $interface
+    			[ $? != 0 ] && continue
+
+
+			# Allow VPN subnet
+        	        $IPTABLES -I INPUT  -i ppp+ -s $PPTP_LOCALHOST_SUBNET_VPN -d ${INT_LAN[$i]} -j JAY_PPTPIN
+	                $IPTABLES -I INPUT  -i ppp+ -s $PPTP_LOCALHOST_SUBNET_VPN -d 255.255.255.255 -j JAY_PPTPIN
+
+
+                	
+                	$IPTABLES -I FORWARD  -i ppp+ -o $interface -s $PPTP_LOCALHOST_SUBNET_VPN -d ${INT_LAN[$i]} \
+				-j JAY_PPTP_FWD_VPN_LAN
+                	$IPTABLES -I FORWARD  -o ppp+ -i $interface -d $PPTP_LOCALHOST_SUBNET_VPN -s ${INT_LAN[$i]} \
+				-j JAY_PPTP_FWD_LAN_VPN
+		
+
+			# open for other subnet from VPN
+			for sub in $PPTP_LOCALHOST_SUBNET_ALLOWED;do
+
+
+				$IPTABLES -I INPUT  -i ppp+ -s $sub -d ${INT_LAN[$i]} -j JAY_PPTPIN
+				$IPTABLES -I INPUT  -i ppp+ -s $sub -d 255.255.255.255 -j JAY_PPTPIN
+		
+        			# allow traffic in LAN
+				$IPTABLES -I FORWARD  -i ppp+ -o $interface -s $sub -d ${INT_LAN[$i]} -j JAY_PPTP_FWD_VPN_LAN
+				$IPTABLES -I FORWARD  -o ppp+ -i $interface -d $sub -s ${INT_LAN[$i]} -j JAY_PPTP_FWD_LAN_VPN
+			done
+
+			i=$i+1	
+
+		done
+	fi
+	echo "PPTPD allowed"
+
+
+
+
+#$IPTABLES -I FORWARD -i ppp1 -j LOG
+#$IPTABLES -I FORWARD -o ppp1 -j LOG
+
+#$IPTABLES -I INPUT -i ppp1 -j LOG
+#$IPTABLES -I OUTPUT -o ppp1 -j LOG
+
+fi
+
+
+
+
+
+
+
+
+
+
+
+################################################
+#        IPSEC
+################################################
+if [ "$IPSEC_LOCALHOST" == "1" ];
+then
+
+        # create CHAIN
+        $IPTABLES -N JAY_IPSECIN
+        $IPTABLES -I JAY_IPSECIN  -j ACCEPT
+
+
+        $IPTABLES -N JAY_IPSEC_FWD_VPN_LAN
+        $IPTABLES -I JAY_IPSEC_FWD_VPN_LAN -j ACCEPT
+
+        $IPTABLES -N JAY_IPSEC_FWD_LAN_VPN
+        $IPTABLES -I JAY_IPSEC_FWD_LAN_VPN -j ACCEPT
+
+
+        $IPTABLES -N JAY_IPSEC_FWD_VPN_INET
+        $IPTABLES -I JAY_IPSEC_FWD_VPN_INET -j ACCEPT
+
+        $IPTABLES -N JAY_IPSEC_FWD_INET_VPN
+        $IPTABLES -I JAY_IPSEC_FWD_INET_VPN -j ACCEPT
+
+
+        # allow the authentication (500/udp)
+        for iface in $IPSEC_LOCALHOST_IFACES;do
+
+                $IPTABLES -A JAY_INETIN_UDP -i $iface -p udp --sport 500 --dport 500 \
+			-m state --state NEW,ESTABLISHED -j ACCEPT
+
+                # allow data (ESP/AH protocol)
+                $IPTABLES -I JAY_INETIN -i $iface -p 50 -j ACCEPT
+		$IPTABLES -I JAY_INETIN -i $iface -p 51 -j ACCEPT
+        done
+
+        # Allow VPN to localhost
+        ########################
+        # Allow VPN subnet
+        $IPTABLES -I INPUT  -i ipsec+ -s $IPSEC_LOCALHOST_SUBNET_VPN -j JAY_IPSECIN
+
+
+        # open for other subnet from VPN
+        #for sub in $PPTP_LOCALHOST_SUBNET_ALLOWED;do
+        #        $IPTABLES -I INPUT  -i ppp+ -s $sub -d $PPTP_LOCALHOST_SUBNET_VPN -j JAY_PPTPIN
+        #        $IPTABLES -I INPUT  -i ppp+ -s $sub -d 255.255.255.255 -j JAY_PPTPIN
+        #done
+
+
+        # Allow VPN to use your internet connection ?
+        #############################################
+        if [ "$PPTP_LOCALHOST_ACCESS_INET" == "1" ]
+        then
+
+
+                # For all internal ifaces/subnet
+                for interface in $EXT_IFACE; do
+
+                        test_if_down $interface
+                        [ $? != 0 ] && continue
+
+
+                        # Allow VPN subnet
+                        #$IPTABLES -I INPUT  -i ppp+ -o $interface -s $PPTP_LOCALHOST_SUBNET_VPN -j JAY_PPTPIN
+
+
+                        $IPTABLES -I FORWARD  -i ppp+ -o $interface -s $PPTP_LOCALHOST_SUBNET_VPN  -j JAY_PPTP_FWD_VPN_INET
+                        $IPTABLES -I FORWARD  -o ppp+ -i $interface -d $PPTP_LOCALHOST_SUBNET_VPN  -j JAY_PPTP_FWD_INET_VPN
+                        $IPTABLES -t nat -A POSTROUTING -o $interface -s $PPTP_LOCALHOST_SUBNET_VPN -j MASQUERADE
+
+                        # open for other subnet from VPN
+                        for sub in $PPTP_LOCALHOST_SUBNET_ALLOWED;do
+
+
+                                #$IPTABLES -I INPUT  -i ppp+ -s $sub -d ${INT_LAN[$i]} -j JAY_PPTPIN
+                                #$IPTABLES -I INPUT  -i ppp+ -s $sub -d 255.255.255.255 -j JAY_PPTPIN
+
+                                # allow traffic in LAN
+                                $IPTABLES -I FORWARD  -i ppp+ -o $interface -s $sub -j JAY_PPTP_FWD_VPN_INET
+                                $IPTABLES -I FORWARD  -o ppp+ -i $interface -d $sub -j JAY_PPTP_FWD_INET_VPN
+                                $IPTABLES -t nat -A POSTROUTING -o $interface -s $sub -j MASQUERADE
+                        done
+
+               done
+        fi
+
+
+
+
+
+
+
+
+        # Allow VPN subnet in LAN ?
+        ##########################
+        if [ "$PPTP_LOCALHOST_ACCESS_LAN" == "1" ]
+        then
+
+
+                # For all internal ifaces/subnet
+                i=0
+                for interface in ${INT_IFACE[*]}; do
+
+                        test_if_down $interface
+                        [ $? != 0 ] && continue
+
+
+                        # Allow VPN subnet
+                        $IPTABLES -I INPUT  -i ppp+ -s $PPTP_LOCALHOST_SUBNET_VPN -d ${INT_LAN[$i]} -j JAY_PPTPIN
+                        $IPTABLES -I INPUT  -i ppp+ -s $PPTP_LOCALHOST_SUBNET_VPN -d 255.255.255.255 -j JAY_PPTPIN
+
+
+
+                        $IPTABLES -I FORWARD  -i ppp+ -o $interface -s $PPTP_LOCALHOST_SUBNET_VPN -d ${INT_LAN[$i]} \
+                                -j JAY_PPTP_FWD_VPN_LAN
+                        $IPTABLES -I FORWARD  -o ppp+ -i $interface -d $PPTP_LOCALHOST_SUBNET_VPN -s ${INT_LAN[$i]} \
+                                -j JAY_PPTP_FWD_LAN_VPN
+
+
+                        # open for other subnet from VPN
+                        for sub in $PPTP_LOCALHOST_SUBNET_ALLOWED;do
+
+
+                                $IPTABLES -I INPUT  -i ppp+ -s $sub -d ${INT_LAN[$i]} -j JAY_PPTPIN
+                                $IPTABLES -I INPUT  -i ppp+ -s $sub -d 255.255.255.255 -j JAY_PPTPIN
+
+                                # allow traffic in LAN
+                                $IPTABLES -I FORWARD  -i ppp+ -o $interface -s $sub -d ${INT_LAN[$i]} -j JAY_PPTP_FWD_VPN_LAN
+                                $IPTABLES -I FORWARD  -o ppp+ -i $interface -d $sub -s ${INT_LAN[$i]} -j JAY_PPTP_FWD_LAN_VPN
+                        done
+
+                        i=$i+1
+
+                done
+        fi
+        echo "IPSec "
+
+
+
+
+#$IPTABLES -I FORWARD -i ppp1 -j LOG
+#$IPTABLES -I FORWARD -o ppp1 -j LOG
+
+#$IPTABLES -I INPUT -i ppp1 -j LOG
+#$IPTABLES -I OUTPUT -o ppp1 -j LOG
+
+fi
+
+
+
+
+
+
+
+
+
+
+#################################################################################
+####--------------------------------------------------------------------------###
+####           SOME FEATURES & CHECK CHAINS                                   ###
+####--------------------------------------------------------------------------###
+#################################################################################
+
+echo
+echo "Misc Section"
+echo "------------"
+
+
+
+##################################################################
+#                   TCP CONTROL CHAIN                            #
+##################################################################
+
+if [ "$TCP_CONTROL" == "1" ]
+then
+	echo "Write TCP Control Chain (only valid tcp please)"
+
+	# Make sure NEW tcp connections are SYN packets
+	echo "   TCP Chain : New Connections have SYN flag ?"
+        $IPTABLES -I JAY_CHECK_TCP -p tcp ! --syn -m state --state NEW -j DROP
+
+
+	# Log Invalid ?
+	################
+	if [ "$LOG_INVALID" == "1" ]
+	then
+		echo "   TCP Chain : Log Enabled"
+
+		if [ "$LOG_ULOG_NLGROUP" == "" ]
+    		then
+		        # use LOG
+		        log_options=" -j LOG  --log-level $LOGLEVEL --log-prefix "
+		else
+			# use ULOG
+		        log_options=" -j ULOG --ulog-nlgroup $LOG_ULOG_NLGROUP --ulog-prefix "
+		fi
+
+
+		# Invalid
+    		##########
+    		$IPTABLES -A JAY_CHECK_TCP -m state --state INVALID -m limit --limit $LOG_LIMIT \
+			$log_options "INVALID Packet "
+
+    		$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-option 64 -m limit --limit $LOG_LIMIT \
+			$log_options "BAD TCP FLAG(64) "
+ 
+    		$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-option 128 -m limit --limit $LOG_LIMIT \
+			$log_options "BAD TCP FLAG(128) " 
+
+
+
+    		# Bad Flags
+    		###########
+    		$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-flags ALL FIN,URG,PSH -m limit --limit $LOG_LIMIT \
+        		$log_options "BAD TCP FLAG "
+
+    		$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-flags ALL SYN,RST,ACK,FIN,URG -m limit --limit $LOG_LIMIT \
+        		$log_options "BAD TCP FLAG "
+
+    		$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-flags ALL ALL -m limit --limit $LOG_LIMIT \
+        		$log_options "BAD TCP FLAG "
+
+    		$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-flags ALL NONE -m limit --limit $LOG_LIMIT \
+        		$log_options "BAD TCP FLAG "
+
+    		$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-flags SYN,RST SYN,RST -m limit --limit $LOG_LIMIT \
+        		$log_options "BAD TCP FLAG "
+
+    		$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-flags SYN,FIN SYN,FIN -m limit --limit $LOG_LIMIT \
+        		$log_options "BAD TCP FLAG "
+
+	fi
+
+	# Drop Invalid
+	###############
+	echo "   TCP Chain : Flags Control"
+
+	$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-flags ALL FIN,URG,PSH         -j DROP
+	$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-flags ALL SYN,RST,ACK,FIN,URG -j DROP
+	$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-flags ALL ALL                 -j DROP
+	$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-flags ALL NONE                -j DROP
+	$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-flags SYN,RST SYN,RST         -j DROP
+	$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-flags SYN,FIN SYN,FIN         -j DROP
+
+	$IPTABLES -A JAY_CHECK_TCP -m state --state INVALID -j DROP
+	$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-option 64          -j DROP
+	$IPTABLES -A JAY_CHECK_TCP -p tcp --tcp-option 128         -j DROP
+else
+	echo "Disable TCP Control"
+	echo -n ""
+fi
+
+
+
+
+
+
+
+##################################################################
+#                     SPOOFING CHAIN                             #  
+##################################################################
+
+
+
+# Log SPOOFED Packets ?
+#######################
+if [ "$SPOOFING_CONTROL" == "1" ]
+then
+	echo "Write Spoofing Control Chain (only valid IPs)"
+
+	# Log activity ?
+	if [ "$LOG_SPOOFED" == "1" ]
+	then
+
+		if [ "$LOG_ULOG_NLGROUP" == "" ]
+    		then
+        		# use LOG
+		        log_options=" -j LOG  --log-level $LOGLEVEL --log-prefix "
+    		else
+			# use ULOG
+		        log_options=" -j ULOG --ulog-nlgroup $LOG_ULOG_NLGROUP --ulog-prefix "
+	    	fi
+
+
+    		echo "   Spoofing Chain : Log enabled"
+
+			# Reserved IPs
+    			for sub in $RESERVED_IP; do
+        			$IPTABLES -A JAY_SPOOFING -s $sub -m limit --limit $LOG_LIMIT \
+	    				--limit-burst 1 $log_options "SPOOFED Packet "
+
+    			done
+
+
+    			# Refuse packets claiming to be from your external IP
+    			for extip in ${IP_ADDR_EXT[*]}; do
+        			$IPTABLES -A JAY_SPOOFING -s $extip -m limit --limit $LOG_LIMIT \
+					--limit-burst 1 $log_options "SPOOFED Packet "
+    			done
+    
+
+
+    			# Refuse packets claiming to be from your LAN
+    			for subnet in ${INT_LAN[*]}; do
+         			$IPTABLES -A JAY_SPOOFING -s $subnet -m limit --limit $LOG_LIMIT \
+            				--limit-burst 1 $log_options "SPOOFED Packet "
+    			done
+
+
+   	 		# Refuse broadcast address packets.
+    			$IPTABLES -A JAY_SPOOFING -d 255.255.255.255 -m limit --limit $LOG_LIMIT \
+				--limit-burst 1 $log_options "SPOOFED Packet "
+    
+    			$IPTABLES -A JAY_SPOOFING -d 0.0.0.0  -m limit --limit $LOG_LIMIT \
+        			--limit-burst 1 $log_options "SPOOFED Packet "
+
+		
+	fi
+
+
+	# Drop SPOOFED Packets
+	#######################
+    
+	
+    		# Reserved IPs
+    		for sub in $RESERVED_IP; do
+        		$IPTABLES -A JAY_SPOOFING -s $sub -j DROP
+    		done
+
+
+    		# Refuse packets claiming to be from your external IP
+    		for extip in ${IP_ADDR_EXT[*]}; do
+        		$IPTABLES -A JAY_SPOOFING -s $extip -j DROP
+    		done
+
+
+
+    		# Refuse packets claiming to be from your LAN
+    		for subnet in ${INT_LAN[*]}; do
+         		$IPTABLES -A JAY_SPOOFING -s $subnet -j DROP
+    		done
+
+
+    		# Refuse broadcast address packets.
+    		$IPTABLES -A JAY_SPOOFING -d 255.255.255.255 -j DROP
+    		$IPTABLES -A JAY_SPOOFING -d 0.0.0.0         -j DROP
+
+	
+else
+	echo "Disable Spoofing control"
+	echo -n ""
+fi
+
+
+########################################################
+#      SYNFLOOD CHAIN
+#######################################################
+echo "Write Synflood Control Chain"
+
+$IPTABLES -A JAY_SYNFLOOD -m limit --limit $SYN_LIMIT --limit-burst $SYN_LIMIT_BURST -j RETURN
+if [ "$LOG_SYNFLOOD" == "1" ]
+then 
+    echo "   Synflood : Log enabled"
+
+    if [ "$LOG_ULOG_NLGROUP" == "" ]
+    then
+        # use LOG
+        log_options=" -j LOG  --log-level $LOGLEVEL --log-prefix "
+    else
+	# use ULOG
+        log_options=" -j ULOG --ulog-nlgroup $LOG_ULOG_NLGROUP --ulog-prefix "
+    fi
+
+
+    $IPTABLES -A JAY_SYNFLOOD -m limit --limit $LOG_LIMIT --limit-burst 1 $log_options "SYNFLOOD Dropped "
+fi
+$IPTABLES -A JAY_SYNFLOOD -j DROP 
+
+
+
+
+
+
+###########################################################
+##       ICMP CHAIN
+###########################################################
+
+
+if [ "$ICMP_CONTROL" == "1" ]
+then
+	echo "Write ICMP Control Chain"
+	
+	# Deny some incoming ICMP
+	echo "   Icmp Chain : Deny some icmp"
+	for icmp in $ICMP_TO_DENY; do
+	    $IPTABLES -A JAY_CHECK_ICMP -p icmp --icmp-type $icmp -j DROP
+	done
+	
+
+
+	echo "   Icmp Chain : Allow the others"
+	# Allow the rest of incoming ICMP
+	$IPTABLES -A JAY_CHECK_ICMP  -j ACCEPT
+	
+else
+	echo "Disable ICMP Control"
+	# Allow all ICMP        
+        $IPTABLES -A JAY_CHECK_ICMP -j ACCEPT
+fi
+
+
+
+# We can be pinged by : ?
+if [ "$PING_FOR_ALL" == "0" ]
+then
+
+    echo "   Icmp Chain : Deny everyone to ping us"
+
+    # Sorry ...
+    $IPTABLES -I JAY_CHECK_ICMP -p icmp --icmp-type echo-request -j DROP
+
+    if [ "$ALLOWED_PING" != "" ] 
+    then
+	for addr in $ALLOWED_PING; do
+	        $IPTABLES -I JAY_CHECK_ICMP -p icmp --icmp-type echo-request -m limit \
+			--limit $PING_LIMIT -s $addr -j ACCEPT   	    
+	done
+    fi
+
+else
+   
+    echo "   Icmp Chain : Allow everyone to ping us"	
+
+    # Accept but Limit ICMP echo-request
+        $IPTABLES -I JAY_CHECK_ICMP -p icmp --icmp-type echo-request -m limit \
+		--limit $PING_LIMIT -j ACCEPT
+fi
+
+
+# only for verbose mode
+[ "$LOG_PINGFLOOD" == "1" ] && {
+	echo "   Icmp Chain : Log Pings requests"
+	echo -n ""
+}
+
+
+
+############################################################
+##    TOS
+############################################################
+
+if [ "$TOS" == "1" ];then
+
+	([ "$TCP_MIN_DELAY" != "" ] || [ "$TCP_MAX_THROUGHPUT" != "" ]) && {
+	    
+	    
+	    # create chain
+	    $IPTABLES -t mangle -N JAY_TOSIN_TCP
+	    $IPTABLES -t mangle -N JAY_TOSOUT_TCP
+	    
+	    
+	    # jump into chain
+	    $IPTABLES -t mangle -A PREROUTING -p tcp -j JAY_TOSIN_TCP
+	    $IPTABLES -t mangle -A OUTPUT     -p tcp -j JAY_TOSOUT_TCP
+	}
+
+	([ "$UDP_MIN_DELAY" != "" ] || [ "$UDP_MAX_THROUGHPUT" != "" ]) && {
+	    # create chain
+	    $IPTABLES -t mangle -N JAY_TOSIN_UDP
+	    $IPTABLES -t mangle -N JAY_TOSOUT_UDP
+	    
+	    # jump into chain
+	    $IPTABLES -t mangle -A PREROUTING -p udp -j JAY_TOSIN_UDP
+	    $IPTABLES -t mangle -A OUTPUT     -p udp -j JAY_TOSOUT_UDP
+	}
+
+	# Setting Up TOS
+	################################
+	echo -n "Setting up TOS for "
+	for port in $TCP_MIN_DELAY; do
+		echo -n "$port/tcp "
+		$IPTABLES -A JAY_TOSIN_TCP  -t mangle -p tcp \
+		    --sport $port -j TOS \
+		    --set-tos Minimize-Delay
+		$IPTABLES -A JAY_TOSOUT_TCP -t mangle -p tcp \
+		    --dport $port -j TOS \
+		    --set-tos Minimize-Delay
+	done
+
+	for port in $UDP_MIN_DELAY; do
+		echo -n "$port/udp "
+	        $IPTABLES -A JAY_TOSIN_UDP -t mangle -p udp \
+		    --sport $port -j TOS \
+		    --set-tos Minimize-Delay
+		$IPTABLES -A JAY_TOSOUT_UDP -t mangle -p udp \
+		    --dport $port -j TOS \
+		    --set-tos Minimize-Delay
+	done
+
+	for port in $TCP_MAX_THROUGHPUT; do
+		echo -n "$port/tcp "
+        	$IPTABLES -A JAY_TOSIN_TCP  -t mangle -p tcp \
+		    --sport $port -j TOS \
+		    --set-tos Maximize-Throughput
+		$IPTABLES -A JAY_TOSOUT_TCP -t mangle -p tcp \
+		    --dport $port -j TOS \
+		    --set-tos Maximize-Throughput
+	done
+
+	for port in $UDP_MAX_THROUGHPUT; do
+		echo -n "$port/udp "
+        	$IPTABLES -A JAY_TOSIN_UDP -t mangle -p udp \
+		    --sport $port -j TOS \
+		    --set-tos Maximize-Throughput
+		$IPTABLES -A JAY_TOSOUT_UDP -t mangle -p udp \
+		    --dport $port -j TOS \
+		    --set-tos Maximize-Throughput
+	done
+	echo
+fi
+
+
+
+
+
+
+
+##############################################################
+##   MARK PACKETS FROM LANs
+##############################################################
+if [ "$MARK" == "1" ]
+then
+	    # create chain
+	    $IPTABLES -t mangle -N JAY_MARKIN
+    
+	    # jump into chain
+	    for iface in ${INT_IFACE[*]}; do
+		$IPTABLES -t mangle -A PREROUTING -i $iface -j JAY_MARKIN
+	    done
+
+        
+                for ips in $MARK_IP; do
+                        echo "$ips" | {
+                        IFS='>' read ip mark
+                        IFS=' '
+
+                        echo "Marking '$ip -> $mark'"
+
+                        # mark from the LANs
+                        for iface in ${INT_IFACE[*]}; do
+                                $IPTABLES -A JAY_MARKIN -i $iface \
+					-t mangle -s $ip \
+                                        -j MARK --set-mark $mark
+                        done
+
+                       }
+                done
+        
+
+        
+                for port in $MARK_TCP; do
+                        echo "$port" | {
+                        IFS='>' read ports mark
+                        IFS=' '
+
+                        echo "Marking '$ports/tcp -> $mark'"
+
+                        # mark from the LANs
+                        for iface in ${INT_IFACE[*]}; do
+                                $IPTABLES -A JAY_MARKIN -i $iface \
+				    -t mangle -p tcp --dport $ports \
+				    -j MARK --set-mark $mark
+
+                              
+                        done
+                        }
+                done
+        
+
+        
+                for port in $MARK_UDP; do
+                        echo "$port" | {
+                        IFS='>' read ports mark
+                        IFS=' '
+
+                        echo "Marking '$ports/udp -> $mark'"
+
+                        # mark from the LANs
+                        for iface in ${INT_IFACE[*]}; do
+                                $IPTABLES -A JAY_MARKIN -i $iface \
+					-t mangle -p udp --dport $ports \
+                                        -j MARK --set-mark $mark
+                        done
+                        }
+                done
+fi
+
+
+
+
+# put a dot on the screen
+#########################
+COUNT=0
+counter_dot (){
+	if [ "$COUNT" == "50" ];then
+        	echo -n "."
+        	COUNT=0
+        else
+                let "COUNT += 1"
+        fi
+}
+
+
+iprange_warning (){
+	echo "WARNING : iprange is not support by iptables (problem with $1)"
+}
+
+
+
+
+##########################################################
+##           DENY IP : INPUT
+##########################################################
+if [ "$DENY_IP_IN" == "1" ]
+then
+        # Create chain
+        $IPTABLES -N JAY_DENY_IP_IN
+
+        # Jump into chain
+        $IPTABLES -I JAY_FWD_INET_LAN -m state --state NEW -j JAY_DENY_IP_IN
+        $IPTABLES -I JAY_FWD_LAN_LAN  -m state --state NEW -j JAY_DENY_IP_IN
+	$IPTABLES -I JAY_FWD_LAN_INET -m state --state NEW -j JAY_DENY_IP_IN
+        $IPTABLES -I JAY_INETIN       -m state --state NEW -j JAY_DENY_IP_IN
+        $IPTABLES -I JAY_LANIN        -m state --state NEW -j JAY_DENY_IP_IN
+
+        echo -n "Denying access 'from' IPS from '$DENY_IP_IN_FILES' file(s) "
+
+
+
+        # For all file
+        for file in $DENY_IP_IN_FILES; do
+
+		# file exist ?
+		[ ! -e $DENY_DIR/$file ] && \
+                { echo ; echo "Warning: '$DENY_DIR/$file' was not found"; echo; } && continue
+
+                # for all file content
+                for item in `cat $DENY_DIR/$file | $GREP -e "^[^#]"`;do
+
+		    echo $item |{
+
+                        IFS=':'
+                        read sub desc
+			tiprange="`echo $sub | grep - | awk '{print 1}'`"
+
+
+
+			if [ "$tiprange" == "1" ] && [ "$IPRANGE_OK" == "0" ]
+			then
+		
+				# print to screen		
+				iprange_warning $sub
+				
+				# stop this rules
+				desc=""
+			fi
+
+
+                        # if we find a valid line
+                        if [ "$desc" != "" ]
+                        then
+
+                            # cut too long description
+                            desc=${desc:0:23}
+
+
+			    # exclusion ?
+			    if [ "`echo $sub | cut -c1`" == "!" ];then
+
+				# remove "!"
+				sub=${sub/!/}
+
+                                if [ "$tiprange" == "1" ]
+                                then
+                               
+				   $IPTABLES -A JAY_DENY_IP_IN -m iprange --src-range $sub -j RETURN
+                                else
+                                  $IPTABLES -A JAY_DENY_IP_IN -s $sub -j RETURN
+                                fi
+
+			    else
+				# Must we log ?
+                                if [ "$DENY_IP_IN_LOG" == "1" ]
+                                then
+					#remove \n
+       					desc=${desc/\n//}
+	
+                                        if [ "$tiprange" == "1" ]
+                                        then
+						if [ "$DENY_ULOG_NLGROUP" == "" ];then
+                                               		$IPTABLES -A JAY_DENY_IP_IN -m iprange --src-range $sub \
+                                               		-m limit --limit $LOG_LIMIT --limit-burst 1 -j LOG \
+							 --log-level $LOGLEVEL --log-prefix "IN:$desc "
+						else
+							$IPTABLES -A JAY_DENY_IP_IN -m iprange --src-range $sub \
+                                                        -m limit --limit $LOG_LIMIT --limit-burst 1 -j ULOG \
+							--ulog-nlgroup $DENY_ULOG_NLGROUP --ulog-prefix "IN:$desc "
+						fi
+                                        else
+						if [ "$DENY_ULOG_NLGROUP" == "" ];then
+                                               		$IPTABLES -A JAY_DENY_IP_IN -s $sub -m limit --limit $LOG_LIMIT \
+                                               		--limit-burst 1 -j LOG  --log-level $LOGLEVEL --log-prefix "IN:$desc "
+						else
+							$IPTABLES -A JAY_DENY_IP_IN -s $sub -m limit --limit $LOG_LIMIT \
+                                                        --limit-burst 1 -j ULOG --ulog-nlgroup $DENY_ULOG_NLGROUP \
+							--ulog-prefix "IN:$desc "
+						fi
+                                        fi
+
+					
+                                fi
+      				# Reject
+
+                                if [ "$tiprange" == "1" ]
+                                then
+                                       $IPTABLES -A JAY_DENY_IP_IN -m iprange --src-range $sub -j REJECT
+                                else
+                                       $IPTABLES -A JAY_DENY_IP_IN -s $sub -j REJECT
+                                fi
+			    fi
+		       
+                        fi
+                     }
+        
+			counter_dot
+	        done
+        done
+
+	echo " done"
+	
+
+        if [ "$DENY_IP_IN_LOG" == "1" ]
+        then
+                 echo -n ""
+                 echo "   Log access from denied ips"
+        fi
+
+
+fi
+
+
+
+
+
+
+##################################################
+#           DENY IP : OUTPUT 
+###################################################
+if [ "$DENY_IP_OUT" == "1" ]
+then
+	# Create chain
+	$IPTABLES -N JAY_DENY_IP_OUT
+
+	# Jump into chain
+	$IPTABLES -I JAY_FWD_LAN_INET -m state --state NEW -j JAY_DENY_IP_OUT
+	$IPTABLES -I JAY_FWD_LAN_LAN  -m state --state NEW -j JAY_DENY_IP_OUT
+	$IPTABLES -I JAY_INETOUT      -m state --state NEW -j JAY_DENY_IP_OUT
+	$IPTABLES -I JAY_LANOUT       -m state --state NEW -j JAY_DENY_IP_OUT
+
+        echo -n "Denying access 'to' IPS from '$DENY_IP_OUT_FILES' file(s) "
+	
+
+
+
+	COUNT=0
+
+	# For all file
+	for file in $DENY_IP_OUT_FILES; do
+
+                # file exist ?
+                [ ! -e $DENY_DIR/$file ] && \
+                { echo ; echo "Warning: '$DENY_DIR/$file' was not found"; echo; } && continue
+		
+
+		# for all file content
+		for item in `cat $DENY_DIR/$file | $GREP -e "^[^#]"`;do
+        	
+		    echo $item |{
+		
+		        IFS=':'
+	        	read sub desc
+			tiprange="`echo $sub | grep - | awk '{print 1}'`"
+
+
+			# testing iprange module if needed
+                        if [ "$tiprange" == "1" ] && [ "$IPRANGE_OK" == "0" ]
+                        then
+                                # print to screen
+                                iprange_warning $sub
+
+                                # stop this rules
+                                desc=""
+                        fi
+
+			
+			
+			# if we find a valid line
+			if [ "$desc" != "" ] && [ "$sub" != "" ]
+			then
+
+			    # cut too long description
+			    desc=${desc:0:23}
+
+
+			    # exclusion ?
+			    if [ "`echo $sub | cut -c1`" == "!" ];then
+
+				# remove "!"
+				sub=${sub/!/}
+
+      				# Return (= don't block this subnet)
+                                if [ "$tiprange" == "1" ]
+                                then
+                                        $IPTABLES -A JAY_DENY_IP_OUT -m iprange --dst-range $sub -j RETURN
+                                else
+                                        $IPTABLES -A JAY_DENY_IP_OUT -d $sub -j RETURN
+                                fi
+
+			    else
+
+#echo $sub
+				# Must we log ?
+				if [ "$DENY_IP_OUT_LOG" == "1" ] 
+				then
+					#remove \n
+					desc=${desc/\n//}
+
+                                        if [ "$tiprange" == "1" ]
+                                        then
+						if [ "$DENY_ULOG_NLGROUP" == "" ];then
+                                               		$IPTABLES -A JAY_DENY_IP_OUT -m iprange --dst-range $sub \
+                                               		-m limit --limit $LOG_LIMIT --limit-burst 1 -j LOG  \
+							--log-level $LOGLEVEL --log-prefix "OUT:$desc "
+						else
+							$IPTABLES -A JAY_DENY_IP_OUT -m iprange --dst-range $sub \
+                                                        -m limit --limit $LOG_LIMIT --limit-burst 1 -j ULOG  \
+							--ulog-nlgroup $DENY_ULOG_NLGROUP --ulog-prefix "OUT:$desc "
+						fi
+                                         else
+						if [ "$DENY_ULOG_NLGROUP" == "" ];then
+							$IPTABLES -A JAY_DENY_IP_OUT -d $sub -m limit --limit $LOG_LIMIT \
+							--limit-burst 1 -j LOG  --log-level $LOGLEVEL --log-prefix "OUT:$desc "
+						else
+							$IPTABLES -A JAY_DENY_IP_OUT -d $sub -m limit --limit $LOG_LIMIT \
+                                                        --limit-burst 1 -j ULOG --ulog-nlgroup $DENY_ULOG_NLGROUP \
+							--ulog-prefix "OUT:$desc "
+						fi
+                                         fi
+
+				fi
+
+				# Reject
+
+                                if [ "$tiprange" == "1" ]
+                                then
+                                       $IPTABLES -A JAY_DENY_IP_OUT -m iprange --dst-range $sub -j REJECT
+                                else
+                                       $IPTABLES -A JAY_DENY_IP_OUT -d $sub -j REJECT
+                                fi
+
+			    fi
+			fi
+			
+	       	    }
+
+			counter_dot 
+		done
+	done
+	
+	echo " done"
+
+
+
+	if [ "$DENY_IP_OUT_LOG" == "1" ]
+	then
+		 echo -n ""
+		 echo "   Log access to denied ips"
+	fi
+
+	
+fi
+
+
+# end of conter_dot
+echo -n " "
+
+
+##########################################################
+##           DENY MAC : INPUT
+##########################################################
+if [ "$DENY_MAC_IN" == "1" ]
+then
+        # Create chain
+        $IPTABLES -N JAY_DENY_MAC_IN
+
+        # Jump into chain
+        $IPTABLES -I JAY_FWD_INET_LAN -m state --state NEW -j JAY_DENY_MAC_IN
+        $IPTABLES -I JAY_FWD_LAN_LAN  -m state --state NEW -j JAY_DENY_MAC_IN
+	$IPTABLES -I JAY_FWD_LAN_INET -m state --state NEW -j JAY_DENY_MAC_IN
+        $IPTABLES -I JAY_INETIN       -m state --state NEW -j JAY_DENY_MAC_IN
+        $IPTABLES -I JAY_LANIN        -m state --state NEW -j JAY_DENY_MAC_IN
+
+        echo -n "Denying access 'from' MAC from '$DENY_MAC_IN_FILES' file(s) "
+
+
+
+        # For all file
+        for file in $DENY_MAC_IN_FILES; do
+
+
+                # file exist ?
+                [ ! -e $DENY_DIR/$file ] && \
+                { echo ; echo "Warning: '$DENY_DIR/$file' was not found"; echo; } && continue
+
+                # for all file content
+                for item in `cat $DENY_DIR/$file | $GREP -e "^[^#]"`;do
+
+		    echo $item |{
+
+                        IFS='-'
+                        read mac desc
+
+                        # if we find a valid line
+                        if [ "$desc" != "" ]
+                        then
+
+				# Must we log ?
+                                if [ "$DENY_MAC_IN_LOG" == "1" ]
+                                then
+					#remove \n
+					desc=${desc/\n//}
+
+					if [ "$DENY_ULOG_NLGROUP" == "" ];then
+
+						$IPTABLES -A JAY_DENY_MAC_IN -m mac --mac-source $mac \
+						    -m limit --limit $LOG_LIMIT --limit-burst 1 \
+						    -j LOG  --log-level $LOGLEVEL --log-prefix "IN:$desc "
+					else
+						$IPTABLES -A JAY_DENY_MAC_IN -m mac --mac-source $mac \
+                                                    -m limit --limit $LOG_LIMIT --limit-burst 1 \
+                                                    -j ULOG --ulog-nlgroup $DENY_ULOG_NLGROUP --ulog-prefix "IN:$desc "
+					fi
+					
+                                fi
+      				# Reject
+				$IPTABLES -A JAY_DENY_MAC_IN -m mac --mac-source $mac -j REJECT
+			    
+		       
+                        fi
+                     }
+                done
+        done
+
+        if [ "$DENY_MAC_IN_LOG" == "1" ]
+        then
+                 echo -n ""
+                 echo "   Log access from denied MAC"
+        fi
+
+
+fi
+
+
+
+
+
+
+################################################
+#         DENY MAC : OUTPUT 
+################################################
+
+
+# not permited by iptables
+
+
+
+
+
+
+
+
+
+# ZorbIPtraffic ?
+#####################
+
+if [ "$ZORBIPTRAFFIC" == "1" ]
+then
+        echo "Setting up ZorbIPTraffic"
+	
+
+	# LAN couter
+        ${IPTABLES} -N ZORBCOUNT  
+
+
+	# Local counter
+        ${IPTABLES} -N ZORBCOUNTIN
+        ${IPTABLES} -A ZORBCOUNTIN
+        ${IPTABLES} -N ZORBCOUNTOUT
+        ${IPTABLES} -A ZORBCOUNTOUT
+
+
+
+        # count by ips
+        for IP in $ZORBIPTRAFFIC_IPS; do
+                ${IPTABLES} -A ZORBCOUNT -s $IP
+                ${IPTABLES} -A ZORBCOUNT -d $IP
+        done;
+
+        # count by subnet using internet
+        for sub in $ZORBIPTRAFFIC_NET; do
+                ${IPTABLES} -A ZORBCOUNT -s $sub
+                ${IPTABLES} -A ZORBCOUNT -d $sub
+        done
+	
+
+
+	# jump into ZORBCOUNT chain 
+	for iface in $EXT_IFACE;do
+
+		# for all subnet using internet
+        	for sub in $ZORBIPTRAFFIC_NET; do
+            		${IPTABLES} -I FORWARD -o $iface -s $sub -j ZORBCOUNT
+		        ${IPTABLES} -I FORWARD -i $iface -d $sub -j ZORBCOUNT
+        	done
+
+
+		# local compute
+		${IPTABLES} -I INPUT  -i $iface -j ZORBCOUNTIN
+		${IPTABLES} -I OUTPUT -o $iface -j ZORBCOUNTOUT
+		
+	done
+fi
+
+
+
+# End Custom rules  ?
+#####################
+if [ "$CUSTOM_RULES" == "1" ]
+then
+
+        # file exist ?
+        if [ -e $CUSTOM_RULES_FILE ]
+        then
+                echo "Start custom rules from '$CUSTOM_RULES_FILE'"
+                #launch script
+                $CUSTOM_RULES_FILE 
+        else
+                echo "Warning: Cannot find the custom rules file at '$CUSTOM_RULES_FILE'"
+        fi
+fi
+

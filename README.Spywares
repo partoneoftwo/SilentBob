@@ -1,0 +1,89 @@
+
+This firewall provided a list IP/subnets coming from alt.privacy.spyware.
+The list was writed by Sponge (http://www.geocities.com/yosponge/) <yosponge@yahoo.com>
+
+
+
+See README    for information about the blocking-ip/mac feature
+See INSTALL   for installation's details
+
+
+
+
+###########################################
+#   TO ENABLE THE SPYWARES BLOCKING       #
+###########################################
+
+
+1) You must create the spywares list file, first run :
+
+  # firewall-spy-update.pl
+
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !! WARNING WARNING WARNING !!
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   
+     This list is a big list ! and you can find some
+     MSN and/or Microsoft ips that you don't must to deny if you
+     want to use Msn or wathever.
+ 
+     If you have problem, edit /etc/firewall-jay/firewall-spy-update.conf and play
+     with the @SPY_TO_IGNORES and/or @IP_TO_IGNORES variable
+
+
+  For more details, see 
+  # firewall-spy-update.pl --help | -h
+
+   
+   
+2) A file has been created
+
+  /var/lib/firewall-jay/block-ip-out.spywares
+
+
+
+
+
+3) Enable the option
+   
+   With conf tool : 
+   ----------------
+   
+     # firewall-config.pl
+     --> Features (optional)
+         --> Denying Hosts
+            --> Denying IPS dst
+
+            set to "Enable" , select the new created file (or more than one), and optionaly "Log"
+
+   By hand :
+   --------- 
+  
+     Edit /etc/firewall-jay/firewall.config
+
+     DENY_IP_OUT="1"
+     DENY_IP_OUT_FILES="block-ip-out.spywares" 
+   
+
+
+4) That's all ...
+
+
+
+
+5) For updating the file simply run :
+
+   # firewall-spy-update.pl
+
+   and reload the block-ip feature of the firewall, run :
+
+   # /etc/ini.t/fw-jay reload-block-ip
+
+
+
+
+6) For automatics updates, set a crontab on every (for example) Sunday like :
+
+   0 0 * * Sun /usr/sbin/firewall-spy-update.pl
+   0 5 * * Sun /etc/init.d/fw-jay reload-block-ip
+

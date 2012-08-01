@@ -1,0 +1,1102 @@
+#!/bin/bash
+# v20120801 - Thomas Frivold
+# Reviving this old gem for use in the 2012's
+### Thanks Jerome for making this great firewall script
+#
+# description: This script takes care of starting and stopping
+#              Jay's Iptables Firewall
+#############################################################################
+#                                                                           #
+#  firewall   v1.0.5              by Jay                                    #
+#                                                                           #
+#  Copyright 2002 Jerome Nokin                                              #
+#                                                                           #
+#   This program is free software; you can redistribute it and/or modify    #
+#   it under the terms of the GNU General Public License as published by    #
+#   the Free Software Foundation; either version 2 of the License, or       #
+#   (at your option) any later version.                                     #
+#                                                                           #
+#   This program is distributed in the hope that it will be useful,         #
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of          #
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the           #
+#   GNU General Public License for more details.                            #
+#                                                                           #
+#   You should have received a copy of the GNU General Public License       #
+#   along with this program; if not, write to the Free Software             #
+#   Foundation, Inc., 59 Temple Place, Suite 330, Boston,                   #
+#   MA  02111-1307  USA                                                     #
+#                                                                           #
+#############################################################################
+
+FIREWALL_CONFIG_DIR="/etc/firewall-jay"	# where is firewall.config ?
+
+FW_JAY_VERSION="1.0.5"			# in case of upgrade, we must
+					# be sure that the config has
+					# also be upgraded by the user
+
+#----------------------------------------------------------------------
+# Netfilter modules config
+#----------------------------------------------------------------------
+
+### netfilter's modules
+#
+#  The default modules list is "filter", "nat" and "mangle".
+#  We need all these modules for realize the big flush at
+#  the beginning of the firewall (even if we don't use mangle options)
+#
+#
+### dependencies
+#
+# MODULES_DEFAULT -> MODULES_NAT -> MODULES_IRC
+#                 -> MODULES_TOS
+#                 -> MODULES_MARK
+#
+#
+
+
+MODULES_PATH="/lib/modules/`uname -r`/kernel/net/ipv4/netfilter"
+
+MODULES_DEFAULT="ipt_state iptable_filter ipt_range ipt_length ipt_limit \
+        ipt_LOG ipt_ULOG ipt_REJECT ipt_TCPMSS \
+        ip_conntrack ip_conntrack_ftp iptable_mangle ip_tables"
+MODULES_TOS="ipt_TOS"
+MODULES_NAT="ipt_MASQUERADE ipt_REDIRECT ip_nat_ftp iptable_nat"
+MODULES_IRC="ip_nat_irc ip_conntrack_irc"
+MODULES_MARK="ipt_MARK"
+
+
+
+
+
+
+#----------------------------------------------------------------------
+# Some Tests
+#----------------------------------------------------------------------
+
+
+# This method works in 2012
+# Are we root?
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root" 1>&2
+   exit 1
+fi
+
+
+# config exist ?
+[ ! -e $FIREWALL_CONFIG_DIR/firewall.config ] && {
+	echo "Error: firewall: Config file cannot be found at '${FIREWALL_CONFIG_DIR}/firewall.config'"
+	echo "run 'firewall-config.pl -n' to create a new one."
+	exit 1;
+}
+
+# include config
+. $FIREWALL_CONFIG_DIR/firewall.config
+
+# Check version
+if [ "$FW_JAY_VERSION" != "$FIREWALL_VERSION" ];then
+	echo "Error: Config version doesn't match with fw-jay version (the config file must by updated by hand)"
+	echo
+	echo "fw-jay version	: $FW_JAY_VERSION"
+	echo "config version	: $FIREWALL_VERSION"
+	echo 
+	echo "Please run 'firewall-config.pl --update'"
+	exit 1;
+fi
+
+
+# rules exist ?
+[ ! -e $FIREWALL_RULES_DIR/firewall.rules ] && {
+        echo "Error: firewall: Rules file cannot be found at '${FIREWALL_RULES_DIR}/firewall.rules'" 
+	echo "Did you correctly installed the firewall ?"
+        exit 1;
+}
+
+
+
+# ifconfig exist ?
+[ ! -e $IFCONFIG ] && {
+        echo "Error: firewall: ifconfig cannot be found at '${IFCONFIG}'."
+	echo "Please run 'firewall-config.pl' and configure 'Options -> Binary Files' or edit '${FIREWALL_CONFIG_DIR}/firewall.config'"
+        exit 1;
+}
+
+# iftables exist ?
+[ ! -e $IPTABLES ] && {
+        echo "Error: firewall: iptables cannot be found at '${IPTABLES}'." 
+	echo "Please run 'firewall-config.pl' and configure 'Options -> Binary Files' or edit '${FIREWALL_CONFIG_DIR}/firewall.config'"
+        exit 1;
+}
+
+# grep exist ?
+[ ! -e $GREP ] && {
+        echo "Error: firewall: grep cannot be found at '${GREP}'." 
+	echo "Please run 'firewall-config.pl' and configure 'Options -> Binary Files' or edit '${FIREWALL_CONFIG_DIR}/firewall.config'"
+        exit 1;
+}
+
+# sed exist ?
+[ ! -e $SED ] && {
+        echo "Error: firewall: sed cannot be found at '${SED}'." 
+	echo "Please run 'firewall-config.pl' and configure 'Options -> Binary Files' or edit '${FIREWALL_CONFIG_DIR}/firewall.config'"
+        exit 1;
+}
+
+
+#----------------------------------------------------------------------
+# Load modules list
+#----------------------------------------------------------------------
+load_modules_list () {
+
+	MPATH=$1
+	shift
+
+        for module in $*
+        do
+                /sbin/modprobe "$module"  2>/dev/null
+        done
+
+	return 0
+}
+
+
+
+#----------------------------------------------------------------------
+# Unload modules list
+#----------------------------------------------------------------------
+unload_modules_list () {
+
+        MPATH=$1
+        shift
+
+        for module in $*
+        do
+                /sbin/rmmod "$module" 2>/dev/null
+        done
+
+        return 0
+}
+
+
+
+#----------------------------------------------------------------------
+# Load modules
+#----------------------------------------------------------------------
+load_modules () {
+
+#	if [ -e $MODULES_PATH/ip_tables.o ]
+#	then
+		echo "Trying to load iptables modules ..."
+
+
+    
+		# LOAD DEFAULTS MODULES
+		#######################
+		load_modules_list $MODULES_PATH $MODULES_DEFAULT
+		[ $? != 0 ] && return 1
+
+		# LOAD NAT MODULES
+		##################
+		if [ "$NAT" == "1" ]
+		then
+		    	load_modules_list $MODULES_PATH $MODULES_NAT \
+			&& touch /var/run/firewall-jay_load-mod-nat || return 1
+		
+		  
+			# LOAD IRC MODULES
+			##################
+			if [ "$IRC" == "1" ]
+			then
+				load_modules_list $MODULES_PATH $MODULES_IRC \
+				&& touch /var/run/firewall-jay_load-mod-irc || return 1
+			fi
+		else
+			[ "$IRC" == "1" ] && echo && echo "Warning: IRC can't be loaded without the NAT option"
+		fi
+
+
+
+		# LOAD MARK MODULES
+		##################
+		if [ "$MARK" == "1" ]
+		then
+		    load_modules_list $MODULES_PATH $MODULES_MARK \
+			&& touch /var/run/firewall-jay_load-mod-mark || return 1
+		fi
+
+		# LOAD TOS MODULES
+                ##################
+
+		if [ "$TOS" == "1" ]
+		then
+		    load_modules_list $MODULES_PATH $MODULES_TOS \
+		    && touch /var/run/firewall-jay_load-mod-tos || return 1
+		fi
+
+		
+	#else
+		#echo "Assuming iptables is compiled into kernel"
+		#echo ""
+	#fi
+
+	return 0
+}
+
+
+#----------------------------------------------------------------------
+# Unload modules
+#----------------------------------------------------------------------
+unload_modules () {
+
+		if [ "$UNLOAD_MODULES_AT_STOP" == "0" ];then
+		  echo "Keep modules loaded"
+		  return 0
+		fi
+
+
+		echo "Unload iptables modules ..."
+
+
+		# MARK
+		[ -e /var/run/firewall-jay_load-mod-mark ] && rm -f /var/run/firewall-jay_load-mod-mark \
+			&& unload_modules_list $MODULES_PATH $MODULES_MARK 
+
+	
+		# TOS
+		[ -e /var/run/firewall-jay_load-mod-tos ]  && rm -f /var/run/firewall-jay_load-mod-tos \
+			&& unload_modules_list $MODULES_PATH $MODULES_TOS 
+
+
+
+		# Must we keep the NAT modules ?
+                if [ ! -e /var/run/firewall-jay-KEEP_MODULES_NAT ]
+                then
+			# no
+			
+			# remove IRC modules
+                        [ -e /var/run/firewall-jay_load-mod-irc ] &&  rm -f /var/run/firewall-jay_load-mod-irc \
+                                && unload_modules_list $MODULES_PATH $MODULES_IRC 
+
+
+			# remove NAT modules
+			[ -e /var/run/firewall-jay_load-mod-nat ] &&  rm -f /var/run/firewall-jay_load-mod-nat \
+                                && unload_modules_list $MODULES_PATH $MODULES_NAT 
+		else
+			echo "Keep nat modules"
+			echo -n ""
+                fi
+
+
+
+		# Must we keep default modules ?
+                if [ ! -e /var/run/firewall-jay-KEEP_MODULES_DEFAULT ]
+                then
+			unload_modules_list $MODULES_PATH $MODULES_DEFAULT
+		else
+			echo "keep default modules"
+			echo -n ""
+                fi
+
+
+}
+
+
+
+#----------------------------------------------------------------------
+#    START
+#----------------------------------------------------------------------
+case "$1" in
+  start|up)
+	
+	# the firewall is stoped ?
+	if ! [ -e /var/run/firewall-jay ]
+	then
+		
+        	echo -n "Starting Jay's Firewall v$FIREWALL_VERSION : "
+        	echo ""
+		
+
+		# check config
+		$0 check
+		[ $? != 0 ] && exit 1
+
+
+		# load modules
+		load_modules
+		[ $? != 0 ] && exit 1
+
+
+                # start PRE START Script
+		IFS=';'
+               for script in $PRE_START;do
+			IFS=' '
+                       $script;
+			IFS=';'
+               done
+		IFS=' '
+
+		# start THE rules
+		$FIREWALL_RULES_DIR/firewall.rules $FIREWALL_CONFIG_DIR
+		if [ $? != 0 ];then
+			echo "Error, Firewall not started"
+			exit 1
+		fi	     	 
+		
+                # start POST START Script
+        	IFS=';'
+	        for script in $POST_START;do
+			IFS=' '
+	                $script
+			IFS=';'
+                done
+		IFS=' '
+
+		# set firewall started
+		echo "$FIREWALL_VERSION" > /var/run/firewall-jay
+
+		echo "done"
+	else
+		echo "Firewall Already started, please use restart"
+	fi
+	
+	
+	;;
+
+
+#----------------------------------------------------------------------
+#    STOP
+#----------------------------------------------------------------------
+ stop|down)
+
+	if ! [ -e /var/run/firewall-jay ];then
+	    echo "Firewall not started"
+	    exit 1
+	fi
+
+	# start PRE STOP Script
+	IFS=';' 
+	for script in $PRE_STOP;do
+		IFS=' '
+	        $script
+		IFS=';'
+	done
+	IFS=' '
+
+        echo -n "Shutdown Jay's Firewall"
+	echo
+
+
+	# Stop forward
+	echo "0" > /proc/sys/net/ipv4/ip_forward
+
+
+	#################
+	# Delete Rules
+	#################
+
+	# Filter
+	$IPTABLES -t filter -F
+	$IPTABLES -t filter -X
+
+	
+	# Nat
+	$IPTABLES -t nat -F
+        $IPTABLES -t nat -X
+
+
+	# Mangle
+	$IPTABLES -t mangle -F
+	$IPTABLES -t mangle -X
+
+
+
+	#################
+	# Accept All
+	#################
+	$IPTABLES -t filter -P INPUT   ACCEPT
+	$IPTABLES -t filter -P OUTPUT  ACCEPT
+	$IPTABLES -t filter -P FORWARD ACCEPT
+
+	
+
+	# unload modules
+	unload_modules
+
+	# set firewall stoped
+	rm -f /var/run/firewall-jay*
+	
+    
+	# start POST STOP Script 
+ 	IFS=';'
+	for script in $POST_STOP;do
+		IFS=' '
+	        $script
+		IFS=';'
+	done
+	IFS=' '
+
+	;;
+
+
+
+#----------------------------------------------------------------------
+#    RESTART
+#----------------------------------------------------------------------
+ restart)
+
+       
+	
+	# keep default modules if we only restart
+        touch /var/run/firewall-jay-KEEP_MODULES_DEFAULT
+
+	# keep nat modules if we only restart
+        [ "$NAT" == "1" ] && [ -e /var/run/firewall-jay_load-mod-nat ] && touch /var/run/firewall-jay-KEEP_MODULES_NAT
+
+	# stop the firewall
+        $0 stop
+
+	# remove tmp informations
+        rm -f /var/run/firewall-jay-KEEP_MODULES_DEFAULT > /dev/null 2>&1
+        rm -f /var/run/firewall-jay-KEEP_MODULES_NAT  > /dev/null 2>&1
+
+
+
+	# start the firewall
+	$0 start
+	;;
+
+
+
+#----------------------------------------------------------------------
+#    CHECK
+#----------------------------------------------------------------------
+    check)
+  
+	# Check configuration file
+	##########################
+
+        PLEASE_RECONFIGURE="
+       Please reconfigure your firewall with 'firewall-config.pl' or by 
+       '$FIREWALL_CONFIG_DIR/firewall.config' 
+       (Did you launched 'firewall-config.pl --update' after the upgrade ?)
+"
+
+
+	
+# INT_IFACE :  optional
+	
+# EXT_IFACE
+   	[ "$EXT_IFACE" == "" ] && \
+		{ echo "Error: No external interfaces found in 'EXT_IFACE', you need at least one external interface";\
+		  echo "$PLEASE_RECONFIGURE"; \
+		  exit 1; }
+
+# DNS
+   	[ "$DNS" == "" ] && { echo "Error: No DNS found in 'DNS'" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+		
+# DHCP_SERVER : optional
+
+# DYN_IP	
+ 	[ "$DYN_IP" != "1" ] && [ "$DYN_IP" != "0" ] && \
+		{ echo "Error: Bad value in 'DYN_IP', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+
+# NAT
+ 	[ "$NAT" != "1" ] && [ "$NAT" != "0" ] && \
+		{ echo "Error: Bad value in 'NAT', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+# PING_FOR_ALL
+ 	[ "$PING_FOR_ALL" != "1" ] && [ "$PING_FOR_ALL" != "0" ] && \
+		{ echo "Error: Bad value in 'PING_FOR_ALL', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+
+# alias echo="echo "
+	#	[ "`'echo' | grep -e '^echo \+$' -e '^#echo \+$' `" == "" ] && { echo "probleme"; }
+
+	
+# USE_DHCP_SERVER
+ 	[ "$USE_DHCP_SERVER" != "1" ] && [ "$USE_DHCP_SERVER" != "0" ] && \
+		{ echo "Error: Bad value in 'USE_DHCP_SERVER', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+		
+# LOGLEVEL
+   	[ "$LOGLEVEL" == "" ] && \
+ 		{ echo "Error: nothing was found in 'LOGLEVEL'" ; echo "$PLEASE_RECONFIGURE";exit 1; }
+#LOG_DROPPED
+   	[ "$LOG_DROPPED" != "1" ] && [ "$LOG_DROPPED" != "0" ] && \
+ 		{ echo "Error: Bad value in 'LOG_DROPPED', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1 ;}
+
+# LOG_MARTIANS
+  	[ "$LOG_MARTIANS" != "1" ] && [ "$LOG_MARTIANS" != "0" ] && \
+ 		{ echo "Error: Bad value in 'LOG_MARTIANS', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+
+#LOG_SYNFLOOD
+   	[ "$LOG_SYNFLOOD" != "1" ] && [ "$LOG_SYNFLOOD" != "0" ] && \
+ 		{ echo "Error: Bad value in 'LOG_SYNFLOOD', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+   	[ "$LOG_PINGFLOOD" != "1" ] && [ "$LOG_PINGFLOOD" != "0" ] && \
+ 		{ echo "Error: Bad value in 'LOG_PINGFLOOD', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+   	[ "$LOG_SPOOFED" != "1" ] && [ "$LOG_SPOOFED" != "0" ] && \
+ 		{ echo "Error: Bad value in 'LOG_SPOOFED', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+   	[ "$LOG_ECHO_REPLY_TO_OUTSIDE" != "1" ] && [ "$LOG_echo_REPLY_TO_OUTSIDE" != "0" ] && \
+ 		{ echo "Error: Bad value in 'LOG_echo_REPLY_TO_OUTSIDE', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+   	[ "$LOG_INVALID" != "1" ] && [ "$LOG_INVALID" != "0" ] && \
+ 		{ echo "Error: Bad value in 'LOG_INVALID', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+
+
+# TCP_CONTROL
+ 	[ "$TCP_CONTROL" != "1" ] && [ "$TCP_CONTROL" != "0" ] && \
+ 		{ echo "Error: Bad value in 'TCP_CONTROL', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+
+# ICMP_CONTROL
+ 	[ "$ICMP_CONTROL" != "1" ] && [ "$ICMP_CONTROL" != "0" ] && \
+ 		{ echo "Error: Bad value in 'ICMP_CONTROL', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+
+  	#ICMP_TO_DENY="address-mask-request network-redirect host-redirect network-redirect TOS-network-redirect TOS-host-redirect"
+
+
+# SPOOFING CONTROL
+ 	[ "$SPOOFING_CONTROL" != "1" ] && [ "$SPOOFING_CONTROL" != "0" ] && \
+ 		{ echo "Error: Bad value in 'SPOOFING_CONTROL', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+
+# DENY IP/MAC
+#--------------
+
+	# test directory 
+        [ "$DENY_IP_OUT" == "1" ] || [ "$DENY_IP_IN" == "1" ] || [ "$DENY_MAC_IN" == "1" ] && \
+                { [ -e $DENY_DIR ] || \
+                        { echo "Error: Bad directory in 'DENY_DIR'";echo "$PLEASE_RECONFIGURE"; exit 1;}
+                }
+
+	# test value of DENY_IP_IN
+        [ "$DENY_IP_IN" != "1" ] && [ "$DENY_IP_IN" != "0" ] && \
+                { echo "Error: Bad value in 'DENY_IP_IN', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1 ; }
+
+
+
+	# enable DENY_IP_IN ?
+	if [ "$DENY_IP_IN" == "1" ] 
+	then
+		# test log option
+		[ "$DENY_IP_IN_LOG" != "1" ] && [ "$DENY_IP_IN_LOG" != "0" ] && \
+                	{ echo "Error: Bad value in 'DENY_IP_IN_LOG', only '1' or '0' are allowed" ;\
+			  echo "$PLEASE_RECONFIGURE"; exit 1 ;\ 
+			}
+		# test ip files
+		#for file in $DENY_IP_IN_FILES;do
+		#	[ ! -e $DENY_DIR/$file ] && \
+		#		{ echo "Error: '$DENY_DIR/$file' was not found"; echo "$PLEASE_RECONFIGURE"; exit 1 ; }
+		#done
+	fi
+        
+	# test value of DENY_IP_OUT
+	[ "$DENY_IP_OUT" != "1" ] && [ "$DENY_IP_OUT" != "0" ] && \
+		{ echo "Error: Bad value in 'DENY_IP_OUT', only '1' or '0' are allowed" ; echo "$PLEASE_RECONFIGURE";exit 1 ; }
+
+
+        # enable DENY_IP_OUT ?
+        if [ "$DENY_IP_OUT" == "1" ]
+        then
+                # test log option
+                [ "$DENY_IP_OUT_LOG" != "1" ] && [ "$DENY_IP_OUT_LOG" != "0" ] && \
+                        { echo "Error: Bad value in 'DENY_IP_OUT_LOG', only '1' or '0' are allowed" ;\
+                          echo "$PLEASE_RECONFIGURE"; exit 1 ;\
+                        }
+                # test ip files
+                #for file in $DENY_IP_OUT_FILES;do
+                #        [ ! -e $DENY_DIR/$file ] && \
+                #                { echo "Error: '$DENY_DIR/$file' was not found"; echo "$PLEASE_RECONFIGURE"; exit 1 ; }
+                #done
+        fi
+
+
+
+	# test value of DENY_MAC_IN
+        [ "$DENY_MAC_IN" != "1" ] && [ "$DENY_MAC_IN" != "0" ] && \
+                { echo "Error: Bad value in 'DENY_MAC_IN', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1 ; }
+
+
+
+	# enable DENY_MAC_IN ?
+	if [ "$DENY_MAC_IN" == "1" ] 
+	then
+		# test log option
+		[ "$DENY_MAC_IN_LOG" != "1" ] && [ "$DENY_MAC_IN_LOG" != "0" ] && \
+                	{ echo "Error: Bad value in 'DENY_MAC_IN_LOG', only '1' or '0' are allowed" ;\
+			  echo "$PLEASE_RECONFIGURE"; exit 1 ;\ 
+			}
+		# test ip files
+		#for file in $DENY_MAC_IN_FILES;do
+		#	[ ! -e $DENY_DIR/$file ] && \
+		#		{ echo "Error: '$DENY_DIR/$file' was not found"; echo "$PLEASE_RECONFIGURE"; exit 1 ; }
+		#done
+	fi
+  
+
+
+
+        [ "$TOS" != "1" ] && [ "$TOS" != "0" ] && \
+		{ echo "Error: Bad value in 'TOS', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+		#TCP_MIN_DELAY=""
+		#UDP_MIN_DELAY=""
+		#TCP_MAX_THROUGHPUT=""
+		#UDP_MAX_THROUGHPUT=""
+
+        #TUN_IFACE=""
+	#TUN_SUBNET=""
+        #TUN_TCP=""
+        #TUN_UDP=""
+
+
+        [ "$ZORBIPTRAFFIC" != "1" ] && [ "$ZORBIPTRAFFIC" != "0" ] && \
+		{ echo "Error: Bad value in 'ZORBIPTRAFFIC', only '1' or '0' are allowed" ; echo "$PLEASE_RECONFIGURE";exit 1; }
+
+		#ZORBIPTRAFFIC_NET=""
+		#ZORBIPTRAFFIC_IPS=""
+
+	[ "$MARK" != "1" ] && [ "$MARK" != "0" ] && \
+		{ echo "Error: Bad value in 'MARK', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+			
+		#MARK_IP=""
+		#MARK_TCP=""
+		#MARK_UDP=""
+
+        [ "$CUSTOM_RULES" != "1" ] && [ "$CUSTOM_RULES" != "0" ] && \
+		{ echo "Error: Bad value in 'CUSTOM_RULES', only '1' or '0' are allowed" ;echo "$PLEASE_RECONFIGURE"; exit 1; }
+
+	[ "$CUSTOM_RULES" == "1" ] && [ ! -e $CUSTOM_RULES_FILE ] && \
+		{ echo "Error: Custom rules files not found at '$CUSTOM_RULES_FILE'"; echo "$PLEASE_RECONFIGURE";exit 1; }
+
+
+
+
+
+		#LIMIT_UPLOAD_LIMIT=""
+		#LIMIT_UPLOAD_BURST=""
+		#LIMIT_UPLOAD_PORTS_DST=""
+		#LIMIT_UPLOAD_PORTS_SRC=""
+		#LIMIT_UPLOAD_IPS=""
+
+
+	#PRIV_PORTS="0:1023"
+	#UPRIV_PORTS="1024:65535"
+	#RESERVED_IP="0.0.0.0/8 10.0.0.0/8 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.0.2.0/24 192.168.0.0/16 224.0.0.0/4 240.0.0.0/5 248.0.0.0/5 255.255.255.255/32"
+	#PING_LIMIT="1/s"
+	#LOG_LIMIT="1/s"
+	#SYN_LIMIT="4/s"
+	#FIREWALL_VERSION="0.9.6"
+
+	echo "Check of configuration's file : OK"
+
+
+
+
+   ;;
+
+    
+
+
+   reload-block-ip)
+	# put a dot on the screen
+	#########################
+	counter_dot (){
+        	if [ "$COUNT" == "50" ];then
+                	echo -n "."
+	                COUNT=0
+        	else
+	                let "COUNT += 1"
+        	fi
+	}
+
+
+
+	iprange_warning (){
+        	echo "WARNING : iprange is not support by iptables (problem with $1)"
+	}
+
+
+
+        # testing iprange (if you want to use PeerProtect)
+        IPRANGE_OK="0"
+	$IPTABLES -N JAY_TEST_IPTABLES
+        $IPTABLES -A JAY_TEST_IPTABLES -m iprange --dst-range 1.1.1.1-1.1.1.4 >/dev/null 2>&1
+        [ "$?" == 0 ] && {
+
+                # don't stop anything, it's only for know if iprange can be used in the blocking feature
+                # see below
+
+                IPRANGE_OK="1"
+        }
+	$IPTABLES -F JAY_TEST_IPTABLES
+	$IPTABLES -X JAY_TEST_IPTABLES
+
+
+	#################################
+        # DENY HOSTS : INPUT
+        #################################
+	COUNT=0
+
+
+	# Firewall started ?
+
+	if [ ! -e /var/run/firewall-jay ];then
+	    echo "Error: The firewall is not started"
+	    exit 1
+	fi
+
+	# Feature activate ?
+	if ( $IPTABLES -n -L JAY_DENY_IP_IN  > /dev/null 2>&1 )
+	then
+	
+		# If the user want to disable the option 
+		if [ "$DENY_IP_IN" == "0" ]
+		then
+			echo
+			echo "Warning: The blocking feature for the incoming ip traffic is enabled but"
+			echo "         the configuration's file ask for disabling it." 
+			echo "         Please restart the firewall if you want to disable the feature."
+			echo "         The files will be reloaded."
+			echo
+		fi
+		
+
+        	# Flush chain
+	        $IPTABLES -F JAY_DENY_IP_IN 
+
+	        # For all file
+        	for file in $DENY_IP_IN_FILES; do
+
+	                # file exist ?
+        	        [ ! -e $DENY_DIR/$file ] && \
+                	{ echo ; echo "Warning: '$DENY_DIR/$file' was not found"; echo; } && continue
+
+
+			echo -n "Reloading '$file' : "
+
+                	# for all file content
+	                for item in `cat $DENY_DIR/$file | $GREP -e "^[^#]"`;do
+	                        echo $item |{
+
+        	                IFS=':'
+                	        read sub desc
+				tiprange="`echo $sub | grep - | awk '{print 1}'`"
+
+
+	                        if [ "$tiprange" == "1" ] && [ "$IPRANGE_OK" == "0" ]
+        	                then
+
+                	                # print to screen
+                        	        iprange_warning $sub
+
+                                	# stop this rules
+                                	desc=""
+                        	fi
+
+
+
+                        	# if we find a valid line
+	                        if [ "$desc" != "" ]
+        	                then
+          
+
+	                           # cut too long description
+        	                    desc=${desc:0:23}
+
+
+				    # exclusion ?
+				    if [ "`echo $sub | cut -c1`" == "!" ];then
+
+					# remove "!"
+					sub=${sub/!/}
+
+					# Return (= don't block this subnet)
+                                        if [ "$tiprange" == "1" ]
+                                            then
+                                              $IPTABLES -A JAY_DENY_IP_IN -m iprange --src-range $sub -j RETURN
+                                            else
+                                              $IPTABLES -A JAY_DENY_IP_IN -s $sub -j RETURN
+                                       fi
+				
+				    else
+					# Must we log ?
+                        	        if [ "$DENY_IP_IN_LOG" == "1" ]
+                                	then
+						#remove \n
+	                                        desc=${desc/\n//}
+                                
+                                          	if [ "$tiprange" == "1" ]
+                                           	then
+                                             		$IPTABLES -A JAY_DENY_IP_IN -m iprange --src-range $sub \
+							-m limit --limit $LOG_LIMIT --limit-burst 1 -j LOG  \
+							--log-level $LOGLEVEL \
+                                                	--log-prefix "IN:$desc "
+                                           	else
+                                             		$IPTABLES -A JAY_DENY_IP_IN -s $sub -m limit --limit $LOG_LIMIT \
+                                                	--limit-burst 1 -j LOG  --log-level $LOGLEVEL \
+                                                	--log-prefix "IN:$desc "
+                                           	fi
+                                	fi
+
+	                                # Reject
+                                        if [ "$tiprange" == "1" ]
+                                        then
+                                                $IPTABLES -A JAY_DENY_IP_IN -m iprange --src-range $sub -j REJECT
+                                        else
+                                                $IPTABLES -A JAY_DENY_IP_IN -s $sub -j REJECT
+                                        fi        	                        
+
+
+
+                	                IFS=' '
+                        	        desc=""
+				    fi
+                        	fi
+                        	}
+
+				counter_dot
+                	done
+        	
+			echo " done"
+			
+		done
+	else
+		# If the user want to enable it
+		if [ "$DENY_IP_IN" == "1" ]
+		then
+
+                        echo
+                        echo "Warning: The blocking feature for the incoming ip traffic is disabled but"
+                        echo "         the configuration's file ask for enabling it."
+                        echo "         Please restart the firewall if you want to enable the feature."
+                        echo
+               
+		fi
+	
+	fi
+
+	#################################
+	# DENY HOSTS : OUTPUT 
+	#################################
+	# if [ "`$IPTABLES -n -L JAY_BLOCKLIST_OUT | grep 'Table does not exist'`" == "" ]
+	COUNT=0
+
+	if ( $IPTABLES -n -L JAY_DENY_IP_OUT  > /dev/null 2>&1 )
+	then
+
+                # If the user want to disable the option
+                if [ "$DENY_IP_OUT" == "0" ]
+                then
+                        echo
+                        echo "Warning: The blocking feature for the outgoing ip traffic is enabled but"
+                        echo "         the configuration's file ask for disabling it."
+                        echo "         Please restart the firewall if you want to disable the feature."
+                        echo "         The files will be reloaded."
+                        echo
+                fi
+
+
+		# Flush chain
+		$IPTABLES -F JAY_DENY_IP_OUT
+
+	       # echo "Reload access 'to' hosts from '$DENY_HOSTS_OUT_FILES' file(s). (can take few secondes)"
+	
+
+		# For all file
+		for file in $DENY_IP_OUT_FILES; do
+
+			
+                        # file exist ?
+                        [ ! -e $DENY_DIR/$file ] && \
+                        { echo ; echo "Warning: '$DENY_DIR/$file' was not found"; echo; } && continue
+
+
+                        echo -n "Reloading '$file' : "
+
+
+			# for all file
+			for item in `cat $DENY_DIR/$file | $GREP -e "^[^#]"`;do
+        	
+	
+			        echo $item |{
+			
+		        	IFS=':'
+		        	read sub desc
+				tiprange="`echo $sub | grep - | awk '{print 1}'`"
+				
+	                        if [ "$tiprange" == "1" ] && [ "$IPRANGE_OK" == "0" ]
+        	                then
+
+                	                # print to screen
+                        	        iprange_warning $sub
+
+                                	# stop this rules
+	                                desc=""
+        	                fi
+
+
+
+				# if we find a valid line
+				if [ "$desc" != "" ]
+				then
+	 
+	                           # cut too long description
+	                            desc=${desc:0:23}
+
+
+				    # exclusion ?
+				    if [ "`echo $sub | cut -c1`" == "!" ];then
+
+					# remove "!"
+					sub=${sub/!/}
+
+					# Return (= don't block this subnet)
+                                        if [ "$tiprange" == "1" ]
+                                        then
+                                              $IPTABLES -A JAY_DENY_IP_OUT -m iprange --dst-range $sub -j RETURN
+                                        else
+                                              $IPTABLES -A JAY_DENY_IP_OUT -d $sub -j RETURN
+                                        fi
+
+				    else
+
+
+					# Must we log ?
+					if [ "$DENY_IP_OUT_LOG" == "1" ] 
+					then
+						#remove \n
+						desc=${desc/\n//}
+                                                if [ "$tiprange" == "1" ]
+                                           	then
+                                             		$IPTABLES -A JAY_DENY_IP_OUT -m iprange --dst-range $sub \
+							-m limit --limit $LOG_LIMIT --limit-burst 1 -j LOG  \
+							--log-level $LOGLEVEL \
+                                                	--log-prefix "OUT:$desc "
+                                           	else
+                                             		$IPTABLES -A JAY_DENY_IP_OUT -d $sub -m limit \
+							--limit $LOG_LIMIT --limit-burst 1 -j LOG  \
+							--log-level $LOGLEVEL \
+                                                	--log-prefix "OUT:$desc "
+                                           	fi
+
+					fi
+				
+					# Reject
+					if [ "$tiprange" == "1" ]
+                                        then
+                                                $IPTABLES -A JAY_DENY_IP_OUT -m iprange --dst-range $sub -j REJECT
+                                        else
+                                                $IPTABLES -A JAY_DENY_IP_OUT -d $sub -j REJECT
+                                        fi
+
+
+				        IFS=' '
+					desc=""
+				    fi
+				fi	
+				}
+				counter_dot
+			done
+			echo " done"
+			
+		done
+
+		
+	else
+                # If the user want to enable it
+                if [ "$DENY_IP_OUT" == "1" ]
+                then
+                        echo
+                        echo "Warning: The blocking feature for the outgoing ip traffic is disabled but"
+                        echo "         the configuration's file ask for enabling it."
+                        echo "         Please restart the firewall if you want to enable the feature."
+                        echo
+
+                fi
+
+
+	fi
+	;;
+
+   reload-block-mac)
+
+	#################################
+        # DENY MAC : INPUT
+        #################################
+	COUNT=O
+
+	# Feature activate ?
+	if ( $IPTABLES -n -L JAY_DENY_MAC_IN  > /dev/null 2>&1 )
+	then
+	
+		# If the user want to disable the option 
+		if [ "$DENY_MAC_IN" == "0" ]
+		then
+			echo
+			echo "Warning: The blocking feature for the incoming mac traffic is enabled but"
+			echo "         the configuration's file ask for disabling it." 
+			echo "         Please restart the firewall if you want to disable the feature."
+			echo "         The files will be reloaded."
+			echo
+		fi
+		
+
+        	# Flush chain
+	        $IPTABLES -F JAY_DENY_MAC_IN 
+
+	        # For all file
+        	for file in $DENY_MAC_IN_FILES; do
+			echo "Reload '$file'."
+
+                	# for all file
+	                for item in `cat $DENY_DIR/$file | $GREP -e "^[^#]"`;do
+	                        echo $item |{
+
+        	                IFS='-'
+                	        read mac desc
+
+                        	# if we find a valid line
+	                        if [ "$desc" != "" ]
+        	                then
+                	                # Must we log ?
+                        	        if [ "$DENY_MAC_IN_LOG" == "1" ]
+                                	then
+						#remove \n
+	                                        desc=${desc/\n//}
+                                        
+						$IPTABLES -A JAY_DENY_MAC_IN -m mac --mac-source $mac -m limit \
+						--limit $LOG_LIMIT --limit-burst 1 -j LOG  \
+						--log-level $LOGLEVEL \
+						--log-prefix "IN:$desc "
+                                	fi
+
+	                                # Reject
+        	                        $IPTABLES -A JAY_DENY_MAC_IN -m mac --mac-source $mac -j REJECT
+
+                	                IFS=' '
+                        	        desc=""
+                        	fi
+                        	}
+           			counter_dot
+		     	done
+        	done
+		echo -n " done"
+
+	else
+	        # not enabled
+		# If the user want to enable it
+		if [ "$DENY_MAC_IN" == "1" ]
+		then
+
+                        echo
+                        echo "Warning: The blocking feature for the incoming mac traffic is disabled but"
+                        echo "         the configuration's file ask for enabling it."
+                        echo "         Please restart the firewall if you want to enable the feature."
+                        echo
+               
+		fi
+	
+	fi
+
+       ;;
+  *)
+        echo "Usage: $0 {start|stop|restart|up|down|check|reload-block-ip|reload-block-mac}"
+        exit 1
+esac
+exit 0
+
+
+

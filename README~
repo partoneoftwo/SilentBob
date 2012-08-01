@@ -1,0 +1,172 @@
+#############################################################################
+#                                                                           #
+#   Thomas's Iptables Firewall - a fork of 			            #
+#									    #
+#   Jay's Iptables Firewall               :    README  file                 #
+#                                                                           #
+#   Original script written by Jerome Jenkin                                #
+#   Abandoned by Jerome in 2007 according to his website     	            #
+#   Resurrected by Thomas Frivold					    #
+#                                                                           #
+#   This program is free software; you can redistribute it and/or modify    #
+#   it under the terms of the GNU General Public License as published by    #
+#   the Free Software Foundation; either version 2 of the License, or       #
+#   (at your option) any later version.                                     #
+#                                                                           #
+#   This program is distributed in the hope that it will be useful,         #
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of          #
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the           #
+#   GNU General Public License for more details.                            #
+#                                                                           #
+#   You should have received a copy of the GNU General Public License       #
+#   along with this program; if not, write to the Free Software             #
+#   Foundation, Inc., 59 Temple Place, Suite 330, Boston,                   #
+#   MA  02111-1307  USA                                                     #
+#                                                                           #
+#############################################################################
+
+
+########################
+#   ACKNOWLEDGEMENT    #
+########################
+
+This script was originally designed, coded and written by
+Jerome Nokin. I hope he will be happy that I have picked up the
+pieces of his great work on this firewall script. If a user downloads
+the last version ever published, Jay's Firewall v1.0.5, it will find
+that it does not work (anymore). I have been able to sort out 
+the quirks that kept it from running, and have now published this
+altered version as a fork on Github under the name Silentbob.
+
+The goal is to keep the software alive and kicking, and to ultimately
+have a nice firewall script to run on gateways and servers.
+Although Jerome recommends users to look elsewhere, for instance
+at M0n0wall or others, I still prefer Jay's Firewall for
+it's useability.
+
+My minor edits and small hacks should not be praised, it was Jerome Nokin
+who did the impressive work on this script. Thanks Jerome!
+
+- Thomas Frivold 01.08.2012
+
+
+
+-----
+From the old readme
+
+See INSTALL          for installation's details
+See README.Spywares  for enable and initialize the spyware feature
+See README.Peers     for protect your peer2peer softwares
+
+###################
+#      INFO       # 
+###################
+
+   First    : Excuse my English
+   Web site : 'http://firewall-jay.sourceforge.net'
+   Contact  : Jerome Nokin <jerome@wallaby.be>
+
+   Description :
+	Jay's Iptables Firewall is a bash script that allows one to easily 
+	install and configure a firewall on a Linux system. It was initially 
+	written for use on a home LAN. The basic features are sharing internet
+	over a LAN, forwarding TCP or UDP ports over the LAN log for 
+	prohibited accesses and more. 
+
+	The configuration of the firewall is assisted by an interactive 
+	configuration tool. You should be able to use the "firewall-config.pl" 
+	script for a interactive configuration, or use "firewall-config.pl -g" 
+	to generate a empty configuration's file and configure it by hand.
+
+
+
+##########################################
+# BLOCKING IPS, SPYWARES , ADWARE, ..    #
+##########################################
+
+   About the blocking hosts feature ...
+
+SPYWARES
+--------
+
+   See README.Spywares
+
+
+
+DENYING IP/HOST
+---------------
+
+   To deny some hosts from your domain, use the 'block-ip*' files.
+   Go on '/var/lib/firewall-jay/',
+        edit 'block-ip-in.user'  to deny all access 'from' hosts
+        edit 'block-ip-out.user' to deny all access 'to'   hosts
+   and configure the firewall for enable the blocking feature (with 'firewall-config.pl' or by hand)
+
+
+   You may write your own files like "block-ip-{in|out}.<your description>" 
+	
+	Syntax:  [!]<ip or subnet>:<description>
+	-------
+           - subnet can be "host.domain.xxx", "1.1.1.1", "1.1.1.0/24", "1.1.1.0/255.255.255.0" 
+             or a range like "1.2.3.50-1.2.3.100" but you need to install the iprange module.
+           - description : must be less than 24 characters (logs from iptables are limited to 29)
+                           no spaces allowed   
+
+	   
+        Example:
+        --------
+           !10.0.0.1:good-guy
+           !10.0.0.5:good-guy 
+           10.0.0.0/8:bad-guys
+
+           In this example, all subnet '10.0.0.0/8' is denied excepted 10.0.0.1 and 10.0.0.5
+
+           Please put what should not be blocked BERORE what must be it (like in example)
+
+
+        See example in 'block-ip-out.spywares' file.
+	A line begining with a '#" are regarded as comment.
+
+
+
+
+DENYING MAC 
+--------------
+
+   You can only deny sources MAC address
+
+   To deny some hosts, use the 'block-mac-in*' files.
+   Go on '/var/lib/firewall-jay/',
+   edit 'block-mac-in.user'  to deny all access 'from' hosts
+   and configure the firewall for enable the blocking MAC feature (with 'firewall-config.pl' or by hand)
+
+
+
+   You may write your own files like "block-mac-in.<your description>"
+
+        Syntax:  <mac address>-<description>
+        -------
+           - mac address must be like XX:XX:XX:XX:XX:XX
+           - description : must be less than 24 characters (log from iptables are limited to 29)
+                           no spaces allowed
+
+        A line begining with a '#" are regarded as comment.
+
+
+
+
+
+##############################
+# CUSTOM RULES               #
+##############################
+
+ Add your own rules in '/var/lib/firewall-jay/firewall-custom.rules' and enable the custom rules options.
+ Next, restart the firewall with "/etc/init.d/fw-jay restart"
+ See the custom file for more informations ...
+
+
+##############################
+# BUGS                       #
+##############################
+
+ Please help me and send me the bugs at 'jerome@wallaby.be' 

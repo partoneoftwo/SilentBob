@@ -1,0 +1,411 @@
+PICKED UP BY THOMAS FRIVOLD
+
+v1.0.6 01.08.2012
+  - Fixed quirks that made the script not work on modern Debian and Ubuntu
+    distributions.
+  - Fixed a couple of typos.
+  - The script now works on modern systems!
+
+-------
+
+LAST RELEASE BY JEROME
+
+v1.0.5 (13/08/2005)
+##################
+  - fix the "Couldn't load target `JAY_CHECK_TCP'" bug.
+  - fix the "ALLOWED_PING doesn't work anymore" bug. 
+
+v1.0.4 (22/05/2005)
+##################
+  - fix the bug in the selection of the interfaces (the strange characters) 
+  - fix the " very very older version " of dialog bug message
+  - fix a small bug about the undetected interfaces in firewall-config.pl .
+  - The custom rules ware started twice.  
+  - The name of the modules in kernel 2.6 change from .o to .ko
+  - refreshing some part of code
+  - Change the syn limit connection from 4/s to 12/s and add SYN_LIMIT_BURST option.
+
+v1.0.3 (29/12/2003)
+###################
+  - A bug has been fixed for people which have enabled ipv6.
+
+v1.0.2 (28/12/2003)
+###################
+  - The unclean module has ben removed for kernel 2.6 compatibility.
+  - Optimisation of spyware/deny-ip feature, the bandwidth may slow down 
+    with too much ips.
+  - The forwarding option accept now to forward some ports from the LAN side.
+  - An option for keep modules loaded after the 'stop' has been added. 
+  - A little bug has been fixed in the 'ping_for_all' feature, the LAN
+    can now ping your firewall while ping_for_all=0 (default rules for 
+    the LAN).
+  - A config file has been added for the 'firewall-spy-update.pl' script.
+
+v1.0.1 (18/09/2003)
+###################
+  - Ulog support has been added
+
+v1.0 (07/09/2003)
+####################
+  - You can now open ports on specifics interfaces if you have more 
+    than one interface.
+  - You can now limit the tcp/udp access from your LAN (and by interface).
+  - A new support for pptp/ipsec has been added.
+    ipsec is stil in development but pptp is working for a pptp server 
+    on the firewall box.
+  - A new spywares updating script has been added, you will be always 
+    up to date. You can put it in a cron. You can tell him which 
+    ips/spy you want to ignore.
+  - The upload limit function has been removed.
+  - A support for PeerProtect has been written (see http://www.atout.be)
+  - The iprange modules support has been added (for the blocking ip option)
+  - The script configuration has been a little bit reviewed
+  - Autodetection of the binary tools
+  - Correct some messages and some few little bugs
+ 
+
+
+v0.9.96 (16/04/2003)
+####################
+  - The script test now all iptables needed options before launching the 
+    firewall. These tests are more powerfull for people which includes 
+    the netfilter in the kernel.
+  - The last spywares list (16/04/2003) has been inclues in this release.
+
+v0.9.95 (06/04/2003)
+####################
+  - The ZorbIPTraffic support has been updated for the ZorbIPTraffic 
+    version >= 0.07
+
+v0.9.94 (03/04/2003)
+####################
+  - A bug has been fixed in the tcp/udp forward feature when the 
+    destination's port is modified.
+
+v0.9.93 (19/03/2003)
+####################
+  - TCP/UPD forward has been fixed for poeple not using the verbose mode 
+    (strange bug) 
+
+v0.9.92 (19/03/2003)
+####################
+  - The ZorbIPTraffic does not work in the previous release
+
+v0.9.91 (17/03/2003)
+####################
+  - The tcp/udp Forward support is now able to select the incoming interface(s) 
+    list for each ports forwarded.
+  - Exclusion option for block-ip file's has been added (for deny a entiresubnet 
+    but some hosts).
+  - A MAC address blocking file support has been added, it work like the
+    blocking ip files but can only deny a host from the source address mac.
+  - A option has been add for reload the blocking ips/mac files without that
+    you must restart the firewall.
+  - A new structure of FORWARD chain has been writed
+  - The Verbose mode has been cleaned and is now very much more detailed 
+  - Pre/Post script support has been added. 
+  - Add undetected iface support for the LAN interfaces too.
+
+
+
+v0.9.9 (06/03/2003)
+#####################
+  - A bug has been fixed in the test of firewall.config file (DENY_HOSTS_DIR)
+    (Thanks to Torbjörn Zachrisson).
+
+v0.9.8 (03/03/2003)
+##################
+  - The IRC modules have been add to the firewall options. 
+  - Support for transparent (HTTP/FTP) proxies has been added. 
+  - The firewall now has an option for testing the configuration file. 
+  - A small bug has been fixed in the script configuration 
+    (for undetected interfaces). 
+  - A new '--update' option has been added to the configuration script 
+    to perform an easy update of the configuration file. 
+  - The argument checking of 'firewall-config.pl' has been rewritten, 
+    so that '--config' can now be used with other options such as '--new' ,
+    '--generate', or '--update'. 
+
+v0.9.7 (28/02/2003)
+###################
+  - The configuration's script is now able to manage the undetected external
+    interfaces (like ppp0 when that it is not connected). 
+
+  - The option ' restart' doesn't unload the modules installed by default 
+    (and NAT if necessary) to keep current connections opened.
+
+v0.9.6 (24/02/2003)
+###################
+  - The iptables structure was rewritten for a optimisation of the packets 
+    classification. The verification of the packets by the kernel is now 
+    more faster and the starting's script too.
+
+  - The spywares blocking and the blocking ips features were merged. 
+    You may now use the "block-ip-{in|out}.*" files for blocking the incoming 
+    and outgoing denied traffic.
+    The spywares files were renamed as "block-ip-out.spywares" and 
+    "block-ip-out.spywares-lite".
+
+
+v0.9.5 (16/02/2003)
+####################
+  - Users are now allowed to customize which kinds of ICMP they want to block. 
+  - Users are now allowed to disable the TCP, ICMP, or Spoofing control. 
+  - The install script was replaced by a Makefile. 
+  - A bug (involving a bad flush of the old rules) which was triggered at 
+    the launch of the firewall was fixed. 
+  - A little bug which affected non-masquerading users was fixed. 
+
+
+v0.9.4 (09/02/2003)
+###################
+  - Custom rules support was added, the rules are read from a file
+    (default is /var/lib/firewall-jay/firewall-custom.rules) and are started 
+    at the beginning of the firewall
+
+  - The option which made it possible to keep the current configuration of 
+    iptables intact was removed. The firewall flush now all iptables before 
+    starting. So for security reasons.
+
+  - The spywares list was updated
+
+v0.9.3 (07/02/2003)
+#####################
+  - Binary files configuration (iptables, ifconfig , grep , ...) is now made 
+    from the configuration's script.
+  - Multiple tests were added at the launch of the firewall.
+
+v0.9.2-1 (02/02/2003)
+######################
+  - A bug was fixed in support for old 'dialog' versions (in the script
+    configuration) (Thanks to Yoyo).
+  - Another bug was found in the script configuration, and you can now 
+    allow ports with range syntax (such as 3010:3020) (Thanks to Yoyo).
+  - Webpage for firewall was modified (Thanks to Seb for his english)
+
+v0.9.2 (02/02/2003)
+####################
+  - An empty configuration file can be generated without using an interactive 
+    dialog (for those who wish to configure the program by hand). 
+  - The install script is now able to create runlevel startup links with a 
+    custom starting position. 
+  - The code was cleaned. 
+  - The latest spyware list (from 2003-01-30) was added.
+
+v0.9.1a (29/01/2003)
+#######################
+  - A install/uninstall script was added, which helps you configure your 
+    runlevel for automatically starting and stopping the firewall. 
+  - The configuration of spyware blocking is now easier, and the available 
+    blockings files are now read from /var/lib/firewall-jay and selected from 
+    the config menu. 
+  - A bug was fixed in the script's configuration, and the detection of 
+    interfaces was modified. (Thanks to Bob Weber).
+
+v0.9b-2  (25/01/2003)
+######################
+  - Fix bug in script configuration
+
+v0.9b-1  (24/01/2003)
+#####################
+  - Create support for old versions of 'dialog' (like in Redhat 7.3) 
+    (Thanks to Yoyo and his Redhat :))
+
+
+v0.9a20030122  (22/01/2003)
+#############################
+  - A clean configuration file is now created, with comments for easy editing. 
+  - A new 'Add forward TCP/UDP rule' was added in the script configuration. 
+
+
+v0.9a20030121  (22/01/2003)
+#############################
+  - Some modifications in the firewall.rules file which were forgotten in 
+    the previous release have been added. These modifications are necessary 
+    to make the new configuration script work. 
+
+v0.9a20030120  (20/01/2003)
+#############################
+  - Text mode interface for configuration
+  - New Spyware list
+
+v0.8.2 (6/01/2003)
+####################
+  - A new list of spyware was added. 
+  - The code was cleaned up. 
+  - A debugging log for smurf attacks was added (the firewall must log ping 
+    'reply' and not ping 'request' to outside). 
+  - An independent chain for Spoofing was created. 
+  
+v0.8.1.1 (2/01/2003)
+####################
+  - The command that removes the runtime files at shutdown was fixed. 
+  - A new, experimental feature for limiting uploads was added, this feature 
+    can be triggered by a particular source port or destination port.   
+
+
+v0.8.1 (31/12/2002)
+###################
+  - Spyware list in 0.8 was not the last found on alt.privacy.spyware
+
+v0.8 (30/12/2002)
+##################
+
+  - The firewall provided now 3 files of list IP/subnet coming from 
+    alt.privacy.spyware (Spyware, Doubleclick & co.) and a BLOCKLIST feature.
+    the files are:
+            block-ip.all           (167 ip/subnets) : All ip and subnet found on 
+                                                      alt.privacy.spyware
+	    block-ip.lite           (21 ip/subnets) : Doubleclick and Gator
+	    block-ip.doubleclick    (14 ip/subnets) : Doubleclick
+
+  - Debug DHCP from windows. If you use a DHCP server on your linuxbox, 
+    he will receive now requests from 0.0.0.0/0 and not only from 169.254.x.y
+
+
+v0.7.2 (29/12/2002)
+####################
+  - bug at the launch of the computer.
+    If the firewall is not stopped before the computer's shutdown, 
+    the directory '/var/run/firewall-jay/' will be cleaned but not removed
+    (and your firewall will not start)
+    Thank Zorbat and sorry for your wasted time ;)
+
+
+v0.7.1 (25/12/2002)
+###################
+  - debug upload limit 
+
+v0.7 (20/12/2002)
+##################
+  - Allow upload limit on the firewall box too
+  - Add 'mss to Path Maximum Unit' for the firewall box too
+  - Deny invalid ICMP (bug in iptables < 1.2.6a) for the firewall box too
+
+
+v0.7a (17/12/2002)
+##################
+  - Add Upload Limit Support
+  - Clamp mss to Path Maximum Unit (because some people block all ICMP)
+  - New Spoofing control 
+  - Remove unused variable
+  - Stop if firewall can't find "/proc/sys/net/ipv4/conf/all/accept_source_route"
+  - Add dynamic ip support 
+  - Deny outging invalid ICMP (bug in iptables < 1.2.6a)
+
+
+v0.6.3 (4/12/2002)
+##################
+  - Add some test for removing warning messages 
+
+v0.6.2 (29/11/2002)
+###################
+  - Found bug in markage support
+
+v0.6.1 (27/11/2002)
+##################
+  - Allow multiple subnets in ZorbIPTraffic
+  - Finalize ZorbIPTraffic support
+
+v0.6 (22/11/2002)
+#################
+  - Before setting up the iptables rules, a firewall must flush the old rules. 
+    But, it is not always funny for the other programs which also use iptables.
+    The new options are {start | stop | restart | flush | flush-restart}.
+    The 'start|stop' options are for starting/stoping the firewall (ho!).
+    The 'restart' option restart ONLY the firewall rules.
+    The 'flush' options is for flushing all your iptables rules,
+    The 'flush-restart' is for restarting the firewall with clean tables 
+    (most secure but sometimes #%@&#*.)
+  - Now under the GNU General Public License
+
+v0.5.1 (16/11/2002)
+###################
+  - Where is the latest Spoofing changes ??
+  - Add final support for ZorbIPTraffic
+  - Add note about kernel configuration,
+    all iptables in modules is largely preferred !
+
+v0.5 (13/11/2002)
+#################
+  - Big Changes !!
+  - Load Balancing, tuning bandwidth and iproute testing were removed, 
+    these features will be available soon separately .
+  - New management of modules loading/unloading. (Eric, ... it's working now !)
+  - New detection of IP, work now with other than English installation.
+  - Eric found a bug in Spoofing control (still him ?)
+  
+
+v0.4.3.1 (30/10/2002)
+#####################
+  - oups, we need testing the options before loading modules :)
+
+v0.4.3 (30/10/2002)
+###################
+  - modules loading rewrited (script now stop if one module is not avalaible)
+  - test if the selected interfaces is up before continue (thanks Eric)
+  - allow Windows to request dhcp service (Windows may use 169.254.x.y before 
+    the dhcp request and is thus not allowed on subnet) (for you Yoyo)
+
+v0.4.2 (27/10/2002)
+###################
+  - found bug in 'ip detections' (thanks Eric ;))
+
+v0.4.1 (26/10/2002)
+###################
+  - correct load balancing, allow more than 2 interfaces
+  - add denying host rule (input & output)
+  - add define location for 'firewall.config' and 'firewall.rules' files 
+    in 'firewall' script.
+  - cleaning 'firewall.config'
+
+v0.4 (22/10/2002)
+#################
+  - add multiple externals interfaces support.
+
+  - add load balancing support with (actualy) 2 interfaces
+    (iproute2 rules).
+  
+  - add 'maximum-throughput' and 'minimum-delay' options for TCP & UDP ports
+    with iptables
+  
+  - idem but the bandwidth is tuned with "tc"
+    give higher priority but less bandwidth to small packets
+    and lower priority but most of the bandwidth to big packets.
+    see HOWTO on http://www.prout.be  (thanks max :)).
+  
+  - adition of an easy markage (mangle table) for packets claiming to be 
+    from IP or port (for testing iproute2 utilities)
+
+  - add ZorbIPtraffic support (http://www.atout.be)
+
+v0.3.2 (03/10/2002)
+################### 
+  - found bug in forwarding ports
+
+
+v0.3.1 (10/08/2002)
+###################
+  - Allow limited TCP & UDP ports for tunneling
+  - Add some debug messages 
+
+
+v0.3 (07/08/2002)
+#################
+  - Add configuration file
+  - Auto detect ip/subnet/broadcast via ifconfig (sed rules)
+  - Add tunneling (beta)
+
+
+v0.2.1 (03/08/2002)
+###################
+  - Test the presence of the modules before loading
+  - Add UDP allowing (loop forgotten)
+  - Add optional root-dns
+
+
+v0.2 (27/07/2002)
+#################
+  - Allow multiple LAN interfaces
+  - Add debug mode
+  - Add changelog :)

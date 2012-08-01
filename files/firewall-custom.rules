@@ -1,0 +1,15 @@
+#!/bin/sh
+#-----------------------------------------------------------------
+# firewall-custom.rules
+#
+# Edit your own iptables rules in this file, they will be loaded after
+# the firewall.
+#
+# WARNING: Keep in mind that these rules can corrupt the firewall, 
+# please be careful to what you insert here
+#
+#-----------------------------------------------------------------
+
+# IPTABLES="/sbin/iptables"
+
+

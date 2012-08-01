@@ -1,0 +1,18 @@
+#######
+# block-mac-in.user
+#
+# Deny incoming traffic from MAC source...
+#
+# Write the mac list 
+#
+#        Syntax:  <mac address>-<description>
+#        -------
+#           - mac address must be like XX:XX:XX:XX:XX:XX
+#           - description : must be less than 24 characters (log from iptables are limited to 29)
+#                           no spaces allowed
+#
+#        A line begining with a '#" are regarded as comment.
+#
+# See README
+#
+#######
