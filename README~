@@ -37,7 +37,7 @@ HOMEPAGE: https://github.com/thomasfrivold/SilentBob
 OLD HOMEPAGE: http://firewall-jay.sourceforge.net/
 OLD FRESHMEAT PAGE: http://freecode.com/projects/firewall-jay
 
-REQUIRES: DIALOG (apt-get install dialog)
+REQUIRES: dialog (apt-get install dialog)
 
 ########################
 #   ACKNOWLEDGEMENTS   #
