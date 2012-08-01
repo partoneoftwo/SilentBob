@@ -34,9 +34,10 @@ COMPATIBLE WITH: DEBIAN, UBUNTU, SLACKWARE, ARCHLINUX and others
 TESTED ON: DEBIAN 6 [SQUEEZE], UBUNTU 12.04 [PRECISE PANGOLIN]
 
 HOMEPAGE: https://github.com/thomasfrivold/SilentBob
-
 OLD HOMEPAGE: http://firewall-jay.sourceforge.net/
 OLD FRESHMEAT PAGE: http://freecode.com/projects/firewall-jay
+
+REQUIRES: dialog (apt-get install dialog)
 
 ########################
 #   ACKNOWLEDGEMENTS   #
