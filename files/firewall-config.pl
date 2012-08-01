@@ -33,7 +33,6 @@ $CONFIGURATOR_VERSION	= "1.5";
 $CONFIGURATOR_DATE	= "13/08/2005";
 $FIREWALL_VERSION	= "1.0.5";
 $FIREWALL_WEBPAGE	= "http://firewall-jay.sourceforge.net";
-
 $IFCONFIG 		= `which ifconfig`;
 $GREP			= `which grep`;
 $CONFIG_FILE_DEFAULT	= "/etc/firewall-jay/firewall.config";
@@ -47,7 +46,7 @@ $SERVICE_FILE           = "/etc/services";
 #--------
 $DIALOG				= `which dialog`;
 $DIALOG_VERSION         	= "0.9a-20020309a";
-$DIALOG_BACKTITLE		= "--backtitle \"Jay's Iptables Firewall Configurator v$CONFIGURATOR_VERSION ($CONFIGURATOR_DATE)\"";
+$DIALOG_BACKTITLE		= "--backtitle \"SilentBob Iptables Firewall Configurator v$CONFIGURATOR_VERSION ($CONFIGURATOR_DATE)\"";
 $DIALOG_CANCEL_LABEL_BACK       = "--cancel-label 'Back'";
 $DIALOG_CANCEL_LABEL_QUIT       = "--cancel-label 'Quit'";
 $DIALOG_HELP_LABEL_ADD_NEW      = "--help-label 'Undetected'";
@@ -443,11 +442,11 @@ if($new_file == 0){
 #-------------------------------------
 
 if($new_file == 1){
-	`$DIALOG $DIALOG_BACKTITLE --title "Jay's Firewall Configuration" --msgbox "\nYou are about to enter in Jay's Firewall Configurator.\n\n$INFO_DIALOG\A new file will be create ($CONFIG_FILE)\n\nPress <Enter> to continue or <Esc> to cancel." 15 70`;
+	`$DIALOG $DIALOG_BACKTITLE --title "SilentBob Firewall Configuration" --msgbox "\nYou are about to enter in SilentBob Firewall Configurator.\n\n$INFO_DIALOG\A new file will be create ($CONFIG_FILE)\n\nPress <Enter> to continue or <Esc> to cancel." 15 70`;
 	$exit=$?;
 }
 else{
-	`$DIALOG $DIALOG_BACKTITLE --title "Jay's Firewall Configuration" --msgbox "\nYou are about to enter in Jay's Firewall Configurator.\n\n$INFO_DIALOG\Current configuration will be read from '$CONFIG_FILE'\n\nPress <Enter> to continue or <Esc> to cancel." 15 70`;
+	`$DIALOG $DIALOG_BACKTITLE --title "SilentBob Firewall Configuration" --msgbox "\nYou are about to enter in SilentBob Firewall Configurator.\n\n$INFO_DIALOG\Current configuration will be read from '$CONFIG_FILE'\n\nPress <Enter> to continue or <Esc> to cancel." 15 70`;
 	$exit=$?;
 }
 
@@ -2015,7 +2014,7 @@ Author : Jerome nokin <$MY_EMAIL>\
 Web    : $FIREWALL_WEBPAGE\
 \
 \
-This is a configurations's tool for Jay's Firewall v$FIREWALL_VERSION \
+This is a configurations's tool for SilentBob Firewall v$FIREWALL_VERSION \
 Please send me all your problems/comments about this tool.\
 I hope that you enjoy it.\
 \
@@ -2782,7 +2781,7 @@ if($menu_specials == '9'){
 
 sub display_help
 {
-        print("firewall-config.pl Version $CONFIGURATOR_VERSION\n*Configurator for Jay's Firewall*\n\n");
+        print("firewall-config.pl Version $CONFIGURATOR_VERSION\n*Configurator for SilentBob Firewall*\n\n");
 
 
 	print("Usage:  firewall-config.pl\n");

@@ -6,7 +6,7 @@
 #                                                                           #
 #   Original script written by Jerome Nokin                                 #
 #   Abandoned by Jerome in 2007 according to his website     	            #
-#   Resurrected by Thomas Frivold					    #
+#   Resurrected by Thomas Frivold on 01.08.2012                             #
 #                                                                           #
 #   This program is free software; you can redistribute it and/or modify    #
 #   it under the terms of the GNU General Public License as published by    #
@@ -27,7 +27,8 @@
 
 
 LICENSE: GPLv2 - Please see LICENSE file
-COMPATIBLE WITH: DEBIAN, UBUNTU, SLACKWARE
+COMPATIBLE WITH: DEBIAN, UBUNTU, SLACKWARE, ARCHLINUX and others
+(Possibly also non-x86 platforms)
 
 ########################
 #   ACKNOWLEDGEMENTS   #
@@ -85,8 +86,8 @@ I still give all acknowledgements to Jerome Nokin for writing the
 original script. I am but a fan.
 
 -----
-From the old readme, which will be rewritten in the future, if needed.
-
+Information from the old readme, which will be rewritten in the future, if needed.
+-----
 See INSTALL          for installation's details
 See README.Spywares  for enable and initialize the spyware feature
 See README.Peers     for protect your peer2peer softwares
