@@ -27,8 +27,11 @@
 
 
 LICENSE: GPLv2 - Please see LICENSE file
+
 COMPATIBLE WITH: DEBIAN, UBUNTU, SLACKWARE, ARCHLINUX and others
 (Possibly also non-x86 platforms)
+
+TESTED ON: DEBIAN 6 [SQUEEZE], UBUNTU 12.04 [PRECISE PANGOLIN]
 
 ########################
 #   ACKNOWLEDGEMENTS   #
