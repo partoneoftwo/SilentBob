@@ -3,7 +3,6 @@
 # firewall-conf.pl  v1.5
 #############################################################################
 #                                                                           #
-#  Copyright 2002 Jerome Nokin                                              #
 #                                                                           #
 #   This program is free software; you can redistribute it and/or modify    #
 #   it under the terms of the GNU General Public License as published by    #
@@ -30,14 +29,14 @@ use Fcntl;
 #--------------------------------------------------
 
 $CONFIGURATOR_VERSION	= "1.5";
-$CONFIGURATOR_DATE	= "13/08/2005";
-$FIREWALL_VERSION	= "1.0.5";
-$FIREWALL_WEBPAGE	= "http://firewall-jay.sourceforge.net";
+$CONFIGURATOR_DATE	= "12/08/2012";
+$FIREWALL_VERSION	= "1.0.6";
+$FIREWALL_WEBPAGE	= "https://github.com/thomasfrivold/SilentBob";
 $IFCONFIG 		= `which ifconfig`;
 $GREP			= `which grep`;
 $CONFIG_FILE_DEFAULT	= "/etc/firewall-jay/firewall.config";
 $LOG_FILE       	= "test.log";
-$MY_EMAIL		= "jerome\@wallaby.be";
+$MY_EMAIL		= "thomas.frivold@gmail.com";
 $SERVICE_FILE           = "/etc/services";
 
 
@@ -2010,7 +2009,7 @@ if($menu == '11'){
 
 	$msg ="\
 firewall-config.pl version $CONFIGURATOR_VERSION ($CONFIGURATOR_DATE)
-Author : Jerome nokin <$MY_EMAIL>\
+Author : Thomas Frivold <$MY_EMAIL>\
 Web    : $FIREWALL_WEBPAGE\
 \
 \
@@ -2019,7 +2018,7 @@ Please send me all your problems/comments about this tool.\
 I hope that you enjoy it.\
 \
 \
-Jerome Nokin";
+Orig author Jerome Nokin";
 	`$DIALOG $DIALOG_BACKTITLE --msgbox "$msg" 18 50`;
 
 }
